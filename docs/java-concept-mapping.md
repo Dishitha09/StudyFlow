@@ -24,3 +24,4 @@ Each entry points to StudyFlow code or a separate course demonstration. The stag
 | Factory and type polymorphism | `TaskFactory.create` and `TaskDraft.Details` | One factory chooses the concrete task from typed creation data. Callers work through the `Task` base class. |
 | Strategy and Comparator | `TaskSortStrategy` and its four implementations | A caller selects a comparison rule without changing task records or their natural order. |
 | Iterator and mutable collections | `Task.editSubtask` and `TaskManager` | The child list iterator replaces a validated item in place. Task operations assemble a candidate list before committing it. |
+| Generics, repository contracts and collections | `AcademicCollection<T>` and `Storage<T>` | The collection applies the same snapshot operations to subjects, workspaces and notes. The record-specific copier preserves each type and prevents accidental edits to committed state. |

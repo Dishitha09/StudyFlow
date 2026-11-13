@@ -21,6 +21,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.util.ConcurrentModificationException;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -293,6 +294,20 @@ class TaskManagerTest {
         storage.failWrites = false;
         checked.markCompleted(created.getId());
         assertEquals(2, checked.findAll().size());
+    }
+
+    @Test
+    void reentrantEditCannotReplaceTheNextTaskAfterDeletingItsTarget() {
+        Task first = manager.quickAdd("First", null, null, null);
+        Task second = manager.quickAdd("Second", null, null, null);
+
+        assertThrows(ConcurrentModificationException.class, () -> manager.update(first.getId(), task -> {
+            manager.delete(first.getId());
+            task.setTitle("Stale edit");
+        }));
+        assertTrue(manager.findById(first.getId()).isEmpty());
+        assertEquals(List.of(second.getId()), manager.findAll().stream().map(Task::getId).toList());
+        assertEquals("Second", manager.findById(second.getId()).orElseThrow().getTitle());
     }
 
     private TaskManager newManager(Storage<List<Task>> storage) {

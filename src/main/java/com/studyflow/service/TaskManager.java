@@ -16,6 +16,7 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.ConcurrentModificationException;
 import java.util.EnumMap;
 import java.util.HashSet;
 import java.util.List;
@@ -85,9 +86,11 @@ public final class TaskManager {
     public synchronized Task update(String id, Consumer<Task> editor) {
         ValidationUtils.required(editor, "Task edit");
         int index = requireIndex(id);
-        Task current = tasks.get(index);
+        List<Task> baseline = tasks;
+        Task current = baseline.get(index);
         Task edited = current.copy();
         editor.accept(edited);
+        requireCurrentSnapshot(baseline);
         requireUnchangedLifecycle(current.getStatus(), current.hasAdvancedRecurrence(), edited);
         replace(index, edited);
         return edited.copy();
@@ -179,13 +182,15 @@ public final class TaskManager {
         ValidationUtils.required(editor, "Subtask edit");
         int index = requireIndex(rootId);
         String subtaskId = ValidationUtils.requiredText(childId, "Subtask ID");
-        Task root = tasks.get(index).copy();
+        List<Task> baseline = tasks;
+        Task root = baseline.get(index).copy();
         requireEditedSubtask(root, subtaskId, child -> {
             TaskStatus previousStatus = child.getStatus();
             boolean previouslyAdvanced = child.hasAdvancedRecurrence();
             editor.accept(child);
             requireUnchangedLifecycle(previousStatus, previouslyAdvanced, child);
         });
+        requireCurrentSnapshot(baseline);
         replace(index, root);
         return requireSubtask(root, subtaskId);
     }
@@ -277,6 +282,12 @@ public final class TaskManager {
         List<Task> candidate = new ArrayList<>(tasks);
         candidate.set(index, task);
         commit(candidate);
+    }
+
+    private void requireCurrentSnapshot(List<Task> baseline) {
+        if (tasks != baseline) {
+            throw new ConcurrentModificationException("Task data changed during the edit. Retry the edit.");
+        }
     }
 
     private void commit(List<Task> candidate) {

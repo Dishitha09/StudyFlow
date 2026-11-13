@@ -51,4 +51,9 @@ Services ..> Repository : depends on contract
 JsonRepositories -up- Repository : implements
 JsonRepositories ..> Domain : maps snapshots
 Integrations ..> Services : future application ports
+note bottom
+  Academic services resolve subject IDs centrally.
+  Global search combines results from task,
+  subject and note services.
+end note
 @enduml

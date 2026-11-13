@@ -23,3 +23,8 @@
 
 - Added the independent task manager, typed task factory, quick-add path, filter criteria and sort strategies. Defined urgency bands and kept root task views separate from subtask operations.
 - Added daily, weekly and monthly recurrence with an advancement marker on the predecessor. One storage commit publishes the completed task and its successor.
+
+### 13 November · Stage 5
+
+- Added subject, workspace and note services with reference validation and detached records. Workspace membership supports independent subject lifecycles.
+- Added categorized global search across the three searchable record types. Subject deletion identifies dependent tasks, notes and workspaces.
