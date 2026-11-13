@@ -22,6 +22,10 @@ interface Prioritizable {
   +getPriority(): Priority
 }
 
+interface Identifiable {
+  +getId(): String
+}
+
 interface "Comparable<Task>" as Comparable {
   +compareTo(other: Task): int
 }
@@ -36,15 +40,16 @@ abstract class Task {
   -priority: Priority
   -status: TaskStatus
   -subtasks: List<Task>
-  -recurrence: Recurrence
-  -successorId: String [0..1]
   +updateStatus(status: TaskStatus): void
   +markCompleted(): void
   +isOverdue(today: LocalDate): boolean
   +getDaysRemaining(today: LocalDate): OptionalLong
   +addSubtask(task: Task): void
+  +editSubtask(id: String, edit: Consumer<Task>): boolean
   +removeSubtask(id: String): boolean
+  +getSubtasks(): List<Task>
   {abstract} +getType(): TaskType
+  {abstract} +copy(): Task
 }
 
 class GeneralTask {
@@ -54,18 +59,23 @@ class GeneralTask {
 class Assignment {
   -submissionType: String
   -attachmentPath: String [0..1]
+  +setSubmissionType(type: String): void
+  +setAttachmentPath(path: String): void
   +getType(): TaskType
 }
 
 class Exam {
   -examType: String
   -preparationStatus: String
+  +setExamType(type: String): void
+  +setPreparationStatus(status: String): void
   +getType(): TaskType
 }
 
 class StudySession {
   -plannedDuration: Duration
   -actualDuration: Duration [0..1]
+  +exceededPlan(): boolean
   +getType(): TaskType
 }
 
@@ -75,8 +85,8 @@ class Subject {
   -subjectCode: String
   -description: String
   -tags: List<String>
-  +addTag(tag: String): void
-  +removeTag(tag: String): void
+  +addTag(tag: String): boolean
+  +removeTag(tag: String): boolean
   +matchesSearch(query: String): boolean
 }
 
@@ -88,8 +98,8 @@ class Note {
   -createdAt: LocalDateTime
   -updatedAt: LocalDateTime
   -tags: List<String>
-  +updateContent(content: String): void
-  +addTag(tag: String): void
+  +updateContent(content: String, updatedAt: LocalDateTime): void
+  +addTag(tag: String, updatedAt: LocalDateTime): boolean
   +matchesSearch(query: String): boolean
 }
 
@@ -97,10 +107,11 @@ class Workspace {
   -id: String
   -name: String
   -description: String
-  -subjectIds: List<String>
+  -subjectIds: Set<String>
   -createdAt: LocalDateTime
-  +addSubject(id: String): void
-  +removeSubject(id: String): void
+  +getSubjectIds(): List<String>
+  +addSubject(id: String): boolean
+  +removeSubject(id: String): boolean
 }
 
 class UserSettings {
@@ -110,12 +121,14 @@ class UserSettings {
   -notificationsEnabled: boolean
   -focusDuration: Duration
   -breakDuration: Duration
-  +validate(): void
+  +setDefaultPriority(priority: Priority): void
+  +setDefaultAttendanceTarget(target: int): void
 }
 
 Task ..|> Searchable
 Task ..|> Prioritizable
 Task ..|> Comparable
+Task ..|> Identifiable
 Task <|-- GeneralTask
 Task <|-- Assignment
 Task <|-- Exam
@@ -126,6 +139,9 @@ Note "0..*" --> "0..1" Subject : subjectId
 Workspace "0..*" o-- "0..*" Subject : subjectIds
 Subject ..|> Searchable
 Note ..|> Searchable
+Subject ..|> Identifiable
+Note ..|> Identifiable
+Workspace ..|> Identifiable
 
 note top of UserSettings
   One local settings record.
@@ -134,8 +150,6 @@ end note
 note top of Task
   Task IDs are unique across the tree.
   An owned subtask has exactly one parent.
-  The subtree is acyclic.
-  A successor ID records past generation,
-  even if the successor is later deleted.
+  Detached copies protect the owned subtree.
 end note
 @enduml

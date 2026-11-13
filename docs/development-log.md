@@ -13,3 +13,8 @@
 
 - Verified Java 21 and Maven 3.9.16 from workspace-local distributions. Configured the Maven build for Java 21 and added FlatLaf, Jackson and JUnit Jupiter.
 - Created the Swing startup path, light-themed window, sidebar and Overview. Documented prerequisites and terminal commands.
+
+### 13 November · Stage 3
+
+- Added the task hierarchy, academic entities, settings, common contracts and reusable validation.
+- Defined defensive copying for editable tasks and nested subtasks. Added an isolated Java language demonstration and updated the class diagram against the model API.
