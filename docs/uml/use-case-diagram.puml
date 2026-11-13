@@ -14,7 +14,7 @@ skinparam rectangleBorderColor #7F94B4
 skinparam rectangleBackgroundColor #FFFFFF
 
 actor Student
-rectangle "StudyFlow | Stages 1–6" {
+rectangle "StudyFlow | Stages 1 to 6" {
   usecase "Manage tasks and subtasks" as Task
   usecase "Create a task" as Create
   usecase "Validate task fields\nand references" as Validate

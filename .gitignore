@@ -1,0 +1,7 @@
+/target/
+/data/
+/materials/uploaded/
+/.idea/
+/.vscode/
+*.iml
+*.log
