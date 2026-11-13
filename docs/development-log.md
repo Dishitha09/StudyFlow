@@ -18,3 +18,8 @@
 
 - Added the task hierarchy, academic entities, settings, common contracts and reusable validation.
 - Defined defensive copying for editable tasks and nested subtasks. Added an isolated Java language demonstration and updated the class diagram against the model API.
+
+### 13 November · Stage 4
+
+- Added the independent task manager, typed task factory, quick-add path, filter criteria and sort strategies. Defined urgency bands and kept root task views separate from subtask operations.
+- Added daily, weekly and monthly recurrence with an advancement marker on the predecessor. One storage commit publishes the completed task and its successor.

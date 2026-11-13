@@ -31,6 +31,8 @@ public abstract class Task implements Identifiable, Comparable<Task>, Prioritiza
     private LocalDate dueDate;
     private Priority priority;
     private TaskStatus status;
+    private Recurrence recurrence = Recurrence.NONE;
+    private boolean recurrenceAdvanced;
     private final List<Task> subtasks = new ArrayList<>();
 
     protected Task(String id, String title, String description, String subjectId, LocalDate createdDate,
@@ -48,6 +50,8 @@ public abstract class Task implements Identifiable, Comparable<Task>, Prioritiza
     protected Task(Task source) {
         this(source.id, source.title, source.description, source.subjectId, source.createdDate,
                 source.dueDate, source.priority, source.status);
+        recurrence = source.recurrence;
+        recurrenceAdvanced = source.recurrenceAdvanced;
         for (Task child : source.subtasks) {
             subtasks.add(child.copy());
         }
@@ -91,6 +95,9 @@ public abstract class Task implements Identifiable, Comparable<Task>, Prioritiza
     }
 
     public final void setDueDate(LocalDate dueDate) {
+        if (dueDate == null && recurrence != Recurrence.NONE) {
+            throw new IllegalArgumentException("A recurring task requires a deadline.");
+        }
         this.dueDate = dueDate;
     }
 
@@ -117,6 +124,27 @@ public abstract class Task implements Identifiable, Comparable<Task>, Prioritiza
 
     public final void markCompleted() {
         updateStatus(TaskStatus.COMPLETED);
+    }
+
+    public final Recurrence getRecurrence() {
+        return recurrence;
+    }
+
+    public final void setRecurrence(Recurrence recurrence) {
+        ValidationUtils.required(recurrence, "Recurrence");
+        if (recurrence != Recurrence.NONE && dueDate == null) {
+            throw new IllegalArgumentException("A recurring task requires a deadline.");
+        }
+        this.recurrence = recurrence;
+    }
+
+    public final boolean hasAdvancedRecurrence() {
+        return recurrenceAdvanced;
+    }
+
+    /** Records that this occurrence has already created its successor. */
+    public final void markRecurrenceAdvanced() {
+        recurrenceAdvanced = true;
     }
 
     public final boolean isOverdue() {

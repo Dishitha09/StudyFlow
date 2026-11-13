@@ -39,8 +39,12 @@ abstract class Task {
   -dueDate: LocalDate [0..1]
   -priority: Priority
   -status: TaskStatus
+  -recurrence: Recurrence
+  -recurrenceAdvanced: boolean
   -subtasks: List<Task>
   +updateStatus(status: TaskStatus): void
+  +setRecurrence(recurrence: Recurrence): void
+  +hasAdvancedRecurrence(): boolean
   +markCompleted(): void
   +isOverdue(today: LocalDate): boolean
   +getDaysRemaining(today: LocalDate): OptionalLong

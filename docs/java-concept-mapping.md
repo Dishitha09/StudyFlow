@@ -21,3 +21,6 @@ Each entry points to StudyFlow code or a separate course demonstration. The stag
 | Strings, StringBuffer and StringTokenizer | `LanguageExamples.formatStudyGrid` and `importLegacyTags` | `String` is immutable. The example appends text to a mutable `StringBuffer` and reads tokens from a legacy delimited string. |
 | ArrayList, LinkedList and ListIterator | `LanguageExamples.importLegacyTags` and `insertReviewBeforeExam` | A list grows as tags arrive. The agenda example uses a cursor to insert before the matching item during traversal. |
 | Instance variable hiding | `LanguageExamples.Page` and `StudyPage` | Field selection uses the declared reference type. An overridden method is selected using the runtime object type. |
+| Factory and type polymorphism | `TaskFactory.create` and `TaskDraft.Details` | One factory chooses the concrete task from typed creation data. Callers work through the `Task` base class. |
+| Strategy and Comparator | `TaskSortStrategy` and its four implementations | A caller selects a comparison rule without changing task records or their natural order. |
+| Iterator and mutable collections | `Task.editSubtask` and `TaskManager` | The child list iterator replaces a validated item in place. Task operations assemble a candidate list before committing it. |
