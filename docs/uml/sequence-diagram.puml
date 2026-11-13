@@ -17,8 +17,8 @@ hide footbox
 autonumber
 
 actor Student
-boundary "Task form" as View
-control TaskController as Controller
+boundary "VerificationPanel task form" as View
+control StudyFlowController as Controller
 control TaskManager as Manager
 participant TaskFactory as Factory
 participant TaskRepository as Repo
@@ -26,8 +26,8 @@ participant FileStorage as Storage
 database "tasks.json + backups" as Disk
 
 Student -> View : Submit task input
-View -> Controller : create(request)
-Controller ->> Manager : create(request) via serial executor
+View -> Controller : createTask(title, subjectId, date, priority)
+Controller ->> Manager : quickAdd(...) via serial executor
 Manager -> Manager : Apply defaults and validate\nfields and subject reference
 alt Invalid input
   Manager -->> Controller : Validation error
@@ -35,20 +35,21 @@ alt Invalid input
 else Valid input
   Manager -> Factory : create(validatedRequest)
   Factory --> Manager : typed task with ID
-  Manager -> Repo : insert(task)
-  Repo -> Repo : Check ID uniqueness and\nbuild candidate snapshot
+  Manager -> Manager : Validate forest and build candidate snapshot
+  Manager -> Repo : save(candidateSnapshot)
+  Repo -> Repo : Map and validate snapshot records
   Repo -> Storage : write(candidateSnapshot)
   Storage -> Disk : Stage candidate, preserve the previous\nvalid snapshot if present, and replace live file
   alt Committed
     Storage --> Repo : success
-    Repo -> Repo : Publish committed snapshot
-    Repo --> Manager : saved task
+    Repo --> Manager : save completed
+    Manager -> Manager : Publish committed snapshot
     Manager -->> Controller : Success
     Controller -> View : Refresh and confirm on EDT
   else Write rejected
     Storage --> Repo : Storage error
-    Repo -> Repo : Retain existing snapshot
     Repo --> Manager : Storage error
+    Manager -> Manager : Retain existing snapshot
     Manager -->> Controller : Storage error
     Controller -> View : Report error on EDT
   end

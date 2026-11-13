@@ -15,7 +15,7 @@ StudyFlow is a single-user, local-first Java 21 desktop application. Maven build
 | `repository` | Translate validated snapshots to local storage and restore them, using Jackson and file utilities | Storage contracts, domain types and Jackson |
 | `integrations` | Reserve a package boundary for future adapters | Future service-defined ports |
 
-`Main` is the composition root. Dependencies are passed to constructors so tests can use an in-memory store and a fixed `Clock`. A repository adapter can change without requiring Swing or the domain to change. The view never opens a JSON file. Services have no Swing dependency.
+`Main` owns the runtime lifecycle and `StudyFlowContext` assembles the profile. Dependencies are passed to constructors so tests can use an in-memory store and a fixed `Clock`. A repository adapter can change without requiring Swing or the domain to change. The view never opens a JSON file. Services have no Swing dependency.
 
 ## Records and relationships
 
@@ -44,11 +44,11 @@ A root task can recur daily, weekly or monthly and needs a deadline. Its first c
 
 1. The student enters a value in a Swing form. Its controller reads the fields and submits a service command to a serial background executor.
 2. The service resolves IDs, validates the request and constructs a candidate collection. Record edits are detached from the committed state.
-3. A repository writes a candidate snapshot through `FileStorage`. JSON is written in UTF-8 with named enums, ISO local dates and ISO local date-times. Persisted task types use a fixed set of known type names. Optional fields allow explicit nulls. Invalid data, including missing required values, receives a contextual error.
+3. A repository converts records to explicit data transfer objects and writes a candidate snapshot through `FileStorage`. JSON is written in UTF-8 with named enums, ISO local dates and ISO local date-times. Persisted task types use a fixed set of known type names. Optional fields allow explicit nulls. Invalid data, including missing required values, receives a contextual error.
 4. The file adapter serializes into a sibling temporary file. When replacing an existing valid file, it saves a uniquely named timestamped copy under `data/backups`. It replaces the destination with a filesystem atomic move when supported. A failed commit leaves the previously committed state available and reports the path and cause. Successful validation and persistence precede the controller's success notification.
 5. The controller publishes the result on the EDT. Shutdown drains the executor and releases the data directory lock after writes finish.
 
-Startup loads each file if present, supplies empty lists or default settings for missing files, then checks the complete set for duplicate IDs and dangling references. An existing empty or invalid file is reported as damaged and left intact. Recovery is explicit. A restore reads and validates a selected per-file backup and checks the proposed dataset against the current sibling files before replacing the destination. Restore preserves the previous bytes, including damaged bytes when present, for inspection. The chosen data root is locked against a second StudyFlow writer.
+Startup loads each file if present, supplies empty lists or default settings for missing files, then checks the complete set for duplicate IDs and dangling references. An existing empty or invalid file is reported as damaged and left intact. The `--restore` command locks the profile without using normal startup. It validates a selected per-file backup and checks the proposed dataset against current sibling files before replacing the destination. Restore preserves the previous bytes, including damaged bytes when present, for inspection. The chosen data root is locked against a second StudyFlow writer. Across services the single application worker is the concurrency boundary for operations that depend on multiple record types.
 
 | File | Snapshot |
 | --- | --- |

@@ -28,3 +28,8 @@
 
 - Added subject, workspace and note services with reference validation and detached records. Workspace membership supports independent subject lifecycles.
 - Added categorized global search across the three searchable record types. Subject deletion identifies dependent tasks, notes and workspaces.
+
+### 13 November · Stage 6
+
+- Connected the task, subject, workspace, note and settings snapshots to Jackson-backed JSON files. Added previous-file backups and a validated restore command.
+- Added a data directory lock, a managed serial executor for file work and four lightweight verification tabs.

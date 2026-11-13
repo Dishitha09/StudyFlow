@@ -26,21 +26,25 @@ public final class MainFrame extends JFrame {
     private static final int NAVIGATION_ROW_HEIGHT = 36;
 
     public MainFrame(AppConfig config) {
-        this(config, new InitialDashboardPanel());
+        this(config, new InitialDashboardPanel(), true);
     }
 
     public MainFrame(AppConfig config, JComponent content) {
+        this(config, content, false);
+    }
+
+    private MainFrame(AppConfig config, JComponent content, boolean showOverviewNavigation) {
         super(config.name());
         setDefaultCloseOperation(DISPOSE_ON_CLOSE);
         setMinimumSize(new Dimension(740, 480));
         setSize(1020, 650);
         setLayout(new BorderLayout());
-        add(createSidebar(config), BorderLayout.LINE_START);
+        add(createSidebar(config, showOverviewNavigation), BorderLayout.LINE_START);
         add(content, BorderLayout.CENTER);
         setLocationRelativeTo(null);
     }
 
-    private JPanel createSidebar(AppConfig config) {
+    private JPanel createSidebar(AppConfig config, boolean showOverviewNavigation) {
         JPanel sidebar = new JPanel(new BorderLayout(0, 26));
         sidebar.setPreferredSize(new Dimension(SIDEBAR_WIDTH, 0));
         sidebar.setBackground(UIManager.getColor("TextField.background"));
@@ -51,7 +55,7 @@ public final class MainFrame extends JFrame {
 
         JPanel navigation = new JPanel(new BorderLayout());
         navigation.setOpaque(false);
-        navigation.add(createNavigation(), BorderLayout.PAGE_START);
+        navigation.add(createNavigation(showOverviewNavigation), BorderLayout.PAGE_START);
         sidebar.add(navigation, BorderLayout.CENTER);
 
         JLabel version = new JLabel("Version " + config.version());
@@ -72,22 +76,16 @@ public final class MainFrame extends JFrame {
         return brand;
     }
 
-    private JPanel createNavigation() {
+    private JPanel createNavigation(boolean showOverviewNavigation) {
         JPanel navigation = new JPanel(new GridLayout(0, 1, 0, 4));
         navigation.setOpaque(false);
         navigation.getAccessibleContext().setAccessibleName("StudyFlow navigation");
 
-        JLabel currentPage = new JLabel("Overview");
-        currentPage.setPreferredSize(new Dimension(0, NAVIGATION_ROW_HEIGHT));
-        currentPage.setBorder(BorderFactory.createEmptyBorder(0, 10, 0, 10));
-        currentPage.setFont(currentPage.getFont().deriveFont(Font.BOLD));
-        currentPage.setBackground(UIManager.getColor("List.selectionBackground"));
-        currentPage.setForeground(UIManager.getColor("List.selectionForeground"));
-        currentPage.setOpaque(true);
-        currentPage.getAccessibleContext().setAccessibleDescription("Current page");
-        navigation.add(currentPage);
-
-        for (String title : new String[]{"Tasks", "Subjects", "Workspaces", "Notes", "Search", "Calendar"}) {
+        navigation.add(currentPage(showOverviewNavigation ? "Overview" : "Academic workspace"));
+        String[] placeholders = showOverviewNavigation
+                ? new String[]{"Tasks", "Subjects", "Workspaces", "Notes", "Search", "Calendar"}
+                : new String[]{"Search", "Calendar"};
+        for (String title : placeholders) {
             JButton placeholder = new JButton(title);
             placeholder.setHorizontalAlignment(SwingConstants.LEADING);
             placeholder.setBorder(BorderFactory.createEmptyBorder(0, 10, 0, 10));
@@ -97,6 +95,18 @@ public final class MainFrame extends JFrame {
             navigation.add(placeholder);
         }
         return navigation;
+    }
+
+    private static JLabel currentPage(String title) {
+        JLabel currentPage = new JLabel(title);
+        currentPage.setPreferredSize(new Dimension(0, NAVIGATION_ROW_HEIGHT));
+        currentPage.setBorder(BorderFactory.createEmptyBorder(0, 10, 0, 10));
+        currentPage.setFont(currentPage.getFont().deriveFont(Font.BOLD));
+        currentPage.setBackground(UIManager.getColor("List.selectionBackground"));
+        currentPage.setForeground(UIManager.getColor("List.selectionForeground"));
+        currentPage.setOpaque(true);
+        currentPage.getAccessibleContext().setAccessibleDescription("Current page");
+        return currentPage;
     }
 
     private static final class AppMark extends JComponent {

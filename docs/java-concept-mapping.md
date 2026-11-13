@@ -25,3 +25,19 @@ Each entry points to StudyFlow code or a separate course demonstration. The stag
 | Strategy and Comparator | `TaskSortStrategy` and its four implementations | A caller selects a comparison rule without changing task records or their natural order. |
 | Iterator and mutable collections | `Task.editSubtask` and `TaskManager` | The child list iterator replaces a validated item in place. Task operations assemble a candidate list before committing it. |
 | Generics, repository contracts and collections | `AcademicCollection<T>` and `Storage<T>` | The collection applies the same snapshot operations to subjects, workspaces and notes. The record-specific copier preserves each type and prevents accidental edits to committed state. |
+| Exceptions, `try`, `catch`, `finally`, `throw` and `throws` | `Main`, `DataDirectoryLock`, `FileStorage`, `TaskNotFoundException` and `MainFrame.AppMark.paintComponent` | `IOException` is checked and callers handle or declare it. Unchecked domain exceptions report invalid use. `finally` disposes a temporary graphics context even if painting fails. |
+| Thread creation, Runnable, lifecycle and ExecutorService | `Main.main`, `initialize` and `finish` | A thread factory names the worker. Tasks queue in order and file work stays off the EDT. Shutdown runs cleanup after pending writes, stops accepting work and releases the directory lock. |
+| Synchronization | `TaskManager` mutations and `AcademicCollection` | Synchronized sections protect read-modify-write operations. The application worker serializes commands that touch multiple record types. |
+| ActionListener and ActionEvent | `VerificationPanel` form buttons | Swing invokes an action listener when a button is activated. The controller receives parsed input and queues the corresponding use case. |
+| Anonymous inner class | `Main.openWindow` | An anonymous `WindowAdapter` handles only the closing event and retains its close guard for that frame. |
+| Adapter | JSON repositories implementing `Storage` | The repository adapts a validated domain snapshot to a JSON representation behind the same contract the in-memory implementation uses. |
+
+## Later-stage and educational coverage
+
+| Concept | Placement and viva explanation |
+| --- | --- |
+| MouseEvent and MouseListener | Stage 7 can add pointer-specific interactions where needed. `ActionListener` already supports mouse and keyboard activation for the Stage 6 buttons. |
+| Thread priorities | `ThreadExamplesTest.explicitlyCoordinatesAThreadFromStartThroughCompletion` sets a priority and uses a latch for ordering. Priorities are hints to the JVM and operating system. |
+| Singleton, Abstract Factory and Decorator | `PatternExamplesTest` uses a one-instance enum, a factory that supplies matching labels and a wrapper that adds a highlight. Production code uses explicit lifecycle ownership, one task factory and direct service dependencies. |
+| Composite | A nested-folder model can use a shared interface with leaf and folder implementations. Stage 6 workspaces use ordered subject IDs and task composition models the existing tree. |
+| HashMap | `PatternExamplesTest.abstractFactoryCreatesMatchingLabelsAndDecoratorAddsOneBehavior` selects a family by name. Application Kanban uses `EnumMap` for enum keys. |

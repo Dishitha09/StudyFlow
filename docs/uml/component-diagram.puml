@@ -14,11 +14,11 @@ skinparam packageBackgroundColor #FFFFFF
 skinparam databaseBorderColor #345279
 skinparam databaseBackgroundColor #EDF5FF
 
-component "Application bootstrap\nMain + configuration" as Bootstrap
+component "Application bootstrap\nMain + StudyFlowContext" as Bootstrap
 
 package "Presentation" {
   component "Swing views\nFlatLaf" as Views
-  component "Controllers\nEDT + serial executor" as Controllers
+  component "StudyFlowController\nEDT + serial executor" as Controllers
   Views --> Controllers : user actions
 }
 
@@ -31,11 +31,12 @@ package "Application and domain" {
   Policies --> Domain
 }
 
-interface "Repository<T>" as Repository
+interface "Storage<T>" as Repository
 
 package "Local persistence" {
   component "JSON repositories" as JsonRepositories
   component "FileStorage\nJackson + backup recovery" as FileStorage
+  component "DataDirectoryLock" as Lock
   database "Local data\nJSON snapshots and backups" as Files
   JsonRepositories --> FileStorage
   FileStorage --> Files
@@ -46,12 +47,13 @@ Bootstrap ..> Views : constructs
 Bootstrap ..> Controllers : constructs
 Bootstrap ..> Services : wires
 Bootstrap ..> JsonRepositories : binds
+Bootstrap ..> Lock : owns one profile
 Controllers --> Services : application operations
-Services ..> Repository : depends on contract
+Services ..> Repository
 JsonRepositories -up- Repository : implements
 JsonRepositories ..> Domain : maps snapshots
-Integrations ..> Services : future application ports
-note bottom
+Integrations ..> Services
+note right of Services
   Academic services resolve subject IDs centrally.
   Global search combines results from task,
   subject and note services.
