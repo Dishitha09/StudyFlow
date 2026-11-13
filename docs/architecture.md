@@ -50,6 +50,8 @@ A root task can recur daily, weekly or monthly and needs a deadline. Its first c
 
 Startup loads each file if present, supplies empty lists or default settings for missing files, then checks the complete set for duplicate IDs and dangling references. An existing empty or invalid file is reported as damaged and left intact. The `--restore` command locks the profile without using normal startup. It validates a selected per-file backup and checks the proposed dataset against current sibling files before replacing the destination. Restore preserves the previous bytes, including damaged bytes when present, for inspection. The chosen data root is locked against a second StudyFlow writer. Across services the single application worker is the concurrency boundary for operations that depend on multiple record types.
 
+The `--backup` command locks and validates the profile, then copies the selected live JSON file to `data/backups`. `FileStorage` validates the selected bytes before writing them to a uniquely named file with a UTC timestamp. The same per-file restore command accepts manual and automatic backups.
+
 | File | Snapshot |
 | --- | --- |
 | `data/tasks/tasks.json` | Root tasks with nested subtasks, type-specific data and recurrence advancement state |
@@ -57,7 +59,7 @@ Startup loads each file if present, supplies empty lists or default settings for
 | `data/workspaces/workspaces.json` | Workspaces and ordered subject IDs |
 | `data/notes/notes.json` | Plain-text notes, tags, timestamps and optional subject IDs |
 | `data/settings/settings.json` | Local profile settings |
-| `data/backups/` | Timestamped previous files and preserved originals from recovery |
+| `data/backups/` | Timestamped automatic and manual backups, and preserved originals from recovery |
 
 ## Extension paths
 

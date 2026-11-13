@@ -32,7 +32,7 @@ Search trims whitespace, normalizes case with `Locale.ROOT` and matches all whit
 
 ## D08 · Backup and recovery
 
-Stage 1 lists backup and restore among future data capabilities and Stage 6 explicitly requires a basic implementation. Stage 6 provides timestamped previous-file backups and an explicit single-file restore path. Whole-profile restore and retention scheduling can be added later. Existing empty, malformed or invalid data blocks normal startup with a useful error and is preserved. Missing files default to empty data or settings only when the complete relationship graph remains valid. A failed restore leaves the original in place. Writes use a verified candidate and temporary replacement, with a backup made before replacing a valid current file.
+Stage 6 provides timestamped automatic backups of previous files, manual backups of current saved files, and per-file restore. Both kinds of backup retain the original JSON bytes and use unique filenames so they remain available independently. The manual command requires a valid profile and an existing file of the chosen type. Existing empty, malformed or invalid data blocks normal startup with a useful error and is preserved. Missing files default to empty data or settings only when the complete relationship graph remains valid. A failed restore leaves the original in place. Writes use a verified candidate and temporary replacement, with a backup made before replacing a valid current file.
 
 ## D09 · Course examples and future integrations
 

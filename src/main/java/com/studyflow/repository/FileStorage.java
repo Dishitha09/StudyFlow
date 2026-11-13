@@ -110,6 +110,18 @@ public final class FileStorage implements AutoCloseable {
         replace(path, bytes, previousBytes, false);
     }
 
+    /** Copies the exact current bytes of a validated snapshot to a new timestamped backup. */
+    synchronized <D, T> Path backup(Path path, JavaType type, Function<D, T> decode) {
+        ensureOpen();
+        byte[] bytes = readIfPresent(path);
+        if (bytes == null) {
+            throw new StorageException(path, "No saved data file to back up", null);
+        }
+        D document = readDocument(path, bytes, type);
+        validate(path, document, decode);
+        return writeBackup(path, bytes, "-manual-");
+    }
+
     /** Decodes and validates the exact backup bytes that will replace the live file. */
     synchronized <D, T> void restore(Path path, Path backup, JavaType type, Function<D, T> decode,
                                     Consumer<T> validateCandidate) {
@@ -179,7 +191,7 @@ public final class FileStorage implements AutoCloseable {
         Path pending = stage(path, bytes);
         try {
             if (previousBytes != null) {
-                backup(path, previousBytes, restoring);
+                writeBackup(path, previousBytes, restoring ? "-before-restore-" : "-");
             }
             moveIntoPlace(pending, path);
         } finally {
@@ -187,10 +199,9 @@ public final class FileStorage implements AutoCloseable {
         }
     }
 
-    private void backup(Path path, byte[] bytes, boolean restoring) {
+    private Path writeBackup(Path path, byte[] bytes, String marker) {
         String file = path.getFileName().toString();
         String prefix = file.substring(0, file.lastIndexOf('.'));
-        String marker = restoring ? "-before-restore-" : "-";
         Path backup = backupDirectory.resolve(prefix + marker + BACKUP_TIME.format(Instant.now())
                 + "-" + UUID.randomUUID() + ".json");
         Path pending = stage(backup, bytes);
@@ -199,6 +210,7 @@ public final class FileStorage implements AutoCloseable {
         } finally {
             removeTemporaryFile(pending);
         }
+        return backup;
     }
 
     private static Path stage(Path path, byte[] bytes) {

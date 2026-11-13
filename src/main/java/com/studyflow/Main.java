@@ -22,16 +22,27 @@ import javax.swing.JFrame;
 import javax.swing.JOptionPane;
 import javax.swing.SwingUtilities;
 
-/** Configures and starts the Swing desktop application. */
+/** Starts the Swing desktop application or runs a local data command. */
 public final class Main {
     private Main() {
     }
 
     public static void main(String[] args) throws IOException {
-        int restoreIndex = args.length > 0 && "--data-dir".equals(args[0]) ? 2 : 0;
-        if (args.length > restoreIndex && "--restore".equals(args[restoreIndex])) {
-            restore(args, restoreIndex);
-            return;
+        int commandIndex = args.length > 0 && "--data-dir".equals(args[0]) ? 2 : 0;
+        if (args.length > commandIndex) {
+            switch (args[commandIndex]) {
+                case "--backup" -> {
+                    backup(args, commandIndex);
+                    return;
+                }
+                case "--restore" -> {
+                    restore(args, commandIndex);
+                    return;
+                }
+                default -> {
+                    // Normal launch arguments are validated by AppConfig.
+                }
+            }
         }
         AppConfig config = AppConfig.fromArgs(args);
         if (GraphicsEnvironment.isHeadless()) {
@@ -42,6 +53,16 @@ public final class Main {
         CompletableFuture<Void> finished = new CompletableFuture<>();
         worker.execute(() -> initialize(config, worker, finished));
         finished.join();
+    }
+
+    private static void backup(String[] args, int commandIndex) throws IOException {
+        if (args.length != commandIndex + 2) {
+            throw new IllegalArgumentException("Usage: StudyFlow [--data-dir <directory>] "
+                    + "--backup <tasks|subjects|workspaces|notes|settings>");
+        }
+        AppConfig config = AppConfig.fromArgs(Arrays.copyOf(args, commandIndex));
+        Path backup = StudyFlowContext.backup(config.dataDirectory(), args[commandIndex + 1]);
+        System.out.println("Created backup " + backup);
     }
 
     private static void restore(String[] args, int restoreIndex) throws IOException {

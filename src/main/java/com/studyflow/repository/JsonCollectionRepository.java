@@ -49,6 +49,11 @@ abstract class JsonCollectionRepository<T extends Identifiable, D> implements Re
         storage.write(path, listType, candidate, this::decode);
     }
 
+    /** Creates a timestamped backup of the current validated collection. */
+    public final Path backup() {
+        return storage.backup(path, listType, this::decode);
+    }
+
     /** Validates a selected backup and commits the same bytes after the supplied checks pass. */
     public final void restore(Path backup, Consumer<List<T>> validateCandidate) {
         storage.restore(path, backup, listType, this::decode, validateCandidate);

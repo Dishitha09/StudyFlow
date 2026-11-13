@@ -42,10 +42,20 @@ By default, StudyFlow uses the `data` directory next to `pom.xml`. It writes sep
 mvn exec:java "-Dexec.args=--data-dir 'C:/StudyFlow data'"
 ```
 
-When a saved file changes, StudyFlow keeps a timestamped copy of the preceding valid file under `data/backups`. Saving requires a filesystem that supports atomic file replacement. A damaged file blocks normal startup and is preserved. To recover a file, close StudyFlow, choose a backup and pass the corresponding type (`tasks`, `subjects`, `workspaces`, `notes` or `settings`). The CLI validates the backup against the current profile before replacing the file. It preserves the previous file for inspection.
+When a saved file changes, StudyFlow keeps a timestamped copy of the preceding valid file under `data/backups`. Saving requires a filesystem that supports atomic file replacement.
+
+To back up the latest saved file, close StudyFlow and select its type (`tasks`, `subjects`, `workspaces`, `notes` or `settings`).
 
 ```powershell
-$backup = (Resolve-Path 'data/backups/tasks-<timestamp>-<id>.json').Path.Replace('\', '/')
+mvn exec:java '-Dexec.args=--backup tasks'
+```
+
+The command validates the profile and saves an exact copy under `data/backups`, with a name like `tasks-manual-<UTC timestamp>-<uuid>.json`. It prints the full path. If the selected type has no saved file yet, the command reports an error. To back up an alternate profile, put `--data-dir` before `--backup`.
+
+To recover a file, close StudyFlow, choose an automatic or manual backup, and pass the corresponding type. The CLI validates the backup against the current profile before replacing the file. It preserves the previous file for inspection, including damaged data.
+
+```powershell
+$backup = (Resolve-Path 'data/backups/tasks-manual-<timestamp>-<uuid>.json').Path.Replace('\', '/')
 mvn exec:java "-Dexec.args=--restore tasks '$backup'"
 ```
 

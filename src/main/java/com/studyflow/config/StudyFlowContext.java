@@ -79,6 +79,29 @@ public final class StudyFlowContext implements AutoCloseable {
         }
     }
 
+    /** Locks and validates the profile before backing up one saved record type. */
+    public static Path backup(Path dataDirectory, String type) throws IOException {
+        Path directory = dataDirectory.toAbsolutePath().normalize();
+        try (DataDirectoryLock ignored = acquire(directory); FileStorage storage = new FileStorage(directory)) {
+            ProfileRepositories repositories = new ProfileRepositories(storage);
+            UserSettings settings = repositories.settings().load();
+            List<Subject> subjects = repositories.subjects().load();
+            List<Workspace> workspaces = repositories.workspaces().load();
+            List<Task> tasks = repositories.tasks().load();
+            List<Note> notes = repositories.notes().load();
+            validateProfile(directory, tasks, subjects, workspaces, notes, settings);
+
+            return switch (type) {
+                case "tasks" -> repositories.tasks().backup();
+                case "subjects" -> repositories.subjects().backup();
+                case "workspaces" -> repositories.workspaces().backup();
+                case "notes" -> repositories.notes().backup();
+                case "settings" -> repositories.settings().backup();
+                default -> throw new IllegalArgumentException("Unknown record type for backup: " + type);
+            };
+        }
+    }
+
     public static void restore(Path dataDirectory, String type, Path backup) throws IOException {
         Path directory = dataDirectory.toAbsolutePath().normalize();
         try (DataDirectoryLock ignored = acquire(directory); FileStorage storage = new FileStorage(directory)) {

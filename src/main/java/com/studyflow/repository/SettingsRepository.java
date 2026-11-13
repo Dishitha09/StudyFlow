@@ -35,6 +35,11 @@ public final class SettingsRepository implements Storage<UserSettings> {
         storage.write(path, type, SettingsRecord.from(settings), SettingsRecord::toDomain);
     }
 
+    /** Creates a timestamped backup of the current validated settings. */
+    public Path backup() {
+        return storage.backup(path, type, SettingsRecord::toDomain);
+    }
+
     public void restore(Path backup, Consumer<UserSettings> validateCandidate) {
         storage.restore(path, backup, type, SettingsRecord::toDomain, validateCandidate);
     }

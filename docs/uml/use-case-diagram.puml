@@ -22,6 +22,7 @@ rectangle "StudyFlow | Stages 1 to 6" {
   usecase "Manage subjects and\nworkspace membership" as Organize
   usecase "Manage subject notes" as Note
   usecase "Search tasks, subjects\nand notes" as Search
+  usecase "Back up a saved data file" as Backup
   usecase "Restore local data\nfrom a backup" as Restore
 
   note right of Task
@@ -36,6 +37,7 @@ Student -- Review
 Student -- Organize
 Student -- Note
 Student -- Search
+Student -- Backup
 Student -- Restore
 Create ..> Validate : <<include>>
 @enduml

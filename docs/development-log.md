@@ -33,3 +33,8 @@
 
 - Connected the task, subject, workspace, note and settings snapshots to Jackson-backed JSON files. Added previous-file backups and a validated restore command.
 - Added a data directory lock, a managed serial executor for file work and four lightweight verification tabs.
+
+### 13 November · Stage 6 continuation
+
+- Audited the existing persistence and verified the 62-test baseline. Added a manual backup command using the existing profile lock, typed repository checks and atomic file writing.
+- Passed 71 tests, verified command-line backup and recovery with a spaced directory path, and repeated the two-process Swing restart check. Updated the requirements, architecture, use-case diagram and Stage 6 report.

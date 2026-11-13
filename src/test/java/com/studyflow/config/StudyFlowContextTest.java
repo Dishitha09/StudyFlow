@@ -20,6 +20,8 @@ import java.time.ZoneOffset;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -184,6 +186,108 @@ class StudyFlowContextTest {
         assertTrue(messages(failure).contains("Unknown subject ID"));
         assertFalse(Files.exists(subjects));
         assertEquals(noteBytes, Files.readString(notes));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"tasks", "subjects", "workspaces", "notes", "settings"})
+    void manuallyBacksUpExactBytesOfFirstSavedVersion(String type) throws IOException {
+        saveLinkedProfile();
+        Path live = dataDirectory.resolve(type).resolve(type + ".json");
+        byte[] expected = Files.readAllBytes(live);
+        assertTrue(backupFiles().isEmpty());
+
+        Path backup = StudyFlowContext.backup(dataDirectory, type);
+
+        assertEquals(dataDirectory.resolve("backups"), backup.getParent());
+        assertTrue(backup.getFileName().toString().startsWith(type + "-manual-"));
+        assertTrue(backup.getFileName().toString().endsWith(".json"));
+        assertArrayEquals(expected, Files.readAllBytes(backup));
+        assertArrayEquals(expected, Files.readAllBytes(live));
+        assertEquals(List.of(backup), backupFiles());
+    }
+
+    @Test
+    void repeatedManualBackupsAreDistinctAndCanBeRestored() throws IOException {
+        String taskId;
+        try (StudyFlowContext profile = StudyFlowContext.open(dataDirectory, CLOCK)) {
+            taskId = profile.taskManager().quickAdd("First version", null, TODAY, null).getId();
+        }
+        Path first = StudyFlowContext.backup(dataDirectory, "tasks");
+        Path second = StudyFlowContext.backup(dataDirectory, "tasks");
+        assertNotEquals(first, second);
+        assertArrayEquals(Files.readAllBytes(first), Files.readAllBytes(second));
+        try (StudyFlowContext profile = StudyFlowContext.open(dataDirectory, CLOCK)) {
+            profile.taskManager().update(taskId, task -> task.setTitle("Later version"));
+        }
+
+        StudyFlowContext.restore(dataDirectory, "tasks", first);
+
+        try (StudyFlowContext profile = StudyFlowContext.open(dataDirectory, CLOCK)) {
+            assertEquals("First version", profile.taskManager().findById(taskId).orElseThrow().getTitle());
+        }
+        assertTrue(Files.isRegularFile(first));
+        assertTrue(Files.isRegularFile(second));
+    }
+
+    @Test
+    void rejectsManualBackupWhenTheSelectedFileHasNeverBeenSaved() throws IOException {
+        Path live = dataDirectory.resolve("tasks/tasks.json");
+
+        StorageException failure = assertThrows(StorageException.class,
+                () -> StudyFlowContext.backup(dataDirectory, "tasks"));
+
+        assertEquals(live, failure.getPath());
+        assertFalse(Files.exists(live));
+        assertTrue(backupFiles().isEmpty());
+    }
+
+    @Test
+    void rejectsManualBackupForACorruptedProfileAndPreservesExistingFiles() throws IOException {
+        saveLinkedProfile();
+        Path validBackup = StudyFlowContext.backup(dataDirectory, "tasks");
+        byte[] backupBytes = Files.readAllBytes(validBackup);
+        Path notes = dataDirectory.resolve("notes/notes.json");
+        Files.writeString(notes, "{ damaged");
+
+        StorageException failure = assertThrows(StorageException.class,
+                () -> StudyFlowContext.backup(dataDirectory, "tasks"));
+
+        assertEquals(notes, failure.getPath());
+        assertEquals("{ damaged", Files.readString(notes));
+        assertEquals(List.of(validBackup), backupFiles());
+        assertArrayEquals(backupBytes, Files.readAllBytes(validBackup));
+        assertArrayEquals(backupBytes, Files.readAllBytes(dataDirectory.resolve("tasks/tasks.json")));
+    }
+
+    @Test
+    void manualBackupRespectsTheProfileLock() throws IOException {
+        try (StudyFlowContext profile = StudyFlowContext.open(dataDirectory, CLOCK)) {
+            profile.taskManager().quickAdd("Locked task", null, TODAY, null);
+
+            IOException failure = assertThrows(IOException.class,
+                    () -> StudyFlowContext.backup(dataDirectory, "tasks"));
+
+            assertTrue(failure.getMessage().contains(dataDirectory.toString()));
+            assertTrue(backupFiles().isEmpty());
+            assertEquals("Locked task", profile.taskManager().findAll().getFirst().getTitle());
+        }
+        assertTrue(Files.isRegularFile(StudyFlowContext.backup(dataDirectory, "tasks")));
+    }
+
+    private void saveLinkedProfile() throws IOException {
+        try (StudyFlowContext profile = StudyFlowContext.open(dataDirectory, CLOCK)) {
+            String subjectId = profile.subjectManager().create("Physics", "PHY", "", List.of()).getId();
+            profile.workspaceManager().create("Autumn", "", List.of(subjectId));
+            profile.taskManager().quickAdd("Problem set", subjectId, TODAY, Priority.HIGH);
+            profile.noteManager().create("Lecture", "Practice the example", subjectId, List.of());
+            profile.saveSettings(profile.settings());
+        }
+    }
+
+    private List<Path> backupFiles() throws IOException {
+        try (var files = Files.list(dataDirectory.resolve("backups"))) {
+            return files.sorted().toList();
+        }
     }
 
     private Path firstBackup(String prefix) throws IOException {
