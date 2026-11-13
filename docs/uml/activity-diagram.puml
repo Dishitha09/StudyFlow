@@ -1,0 +1,35 @@
+@startuml
+title StudyFlow | Create a task
+skinparam backgroundColor #F8FAFD
+skinparam defaultFontName Segoe UI
+skinparam defaultFontColor #14213B
+skinparam shadowing false
+skinparam ArrowColor #506383
+skinparam activityBorderColor #345279
+skinparam activityBackgroundColor #EDF5FF
+skinparam activityDiamondBackgroundColor #FFF6DB
+skinparam activityDiamondBorderColor #A17E3B
+skinparam activityStartColor #345279
+skinparam activityEndColor #345279
+
+start
+:Open task entry;
+repeat
+  :Enter title and type;
+  :Choose deadline, priority and subject
+  as needed;
+  :Submit the request;
+  :Apply defaults and validate fields,
+  type details and subject reference;
+  backward :Display field errors
+  and retain input;
+repeat while (Validation failed?) is (yes) not (no)
+:Create task with a fresh ID and TODO status;
+:Commit task through the repository;
+if (Commit succeeded?) then (yes)
+  :Refresh task views and confirm creation;
+else (no)
+  :Display storage error and retain input;
+endif
+stop
+@enduml

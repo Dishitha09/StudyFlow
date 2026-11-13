@@ -1,0 +1,56 @@
+@startuml
+title StudyFlow | Create and persist a task
+skinparam backgroundColor #F8FAFD
+skinparam defaultFontName Segoe UI
+skinparam defaultFontColor #14213B
+skinparam shadowing false
+skinparam ArrowColor #506383
+skinparam sequenceParticipantBorderColor #345279
+skinparam sequenceParticipantBackgroundColor #EDF5FF
+skinparam sequenceActorBorderColor #345279
+skinparam sequenceActorBackgroundColor #EDF5FF
+skinparam sequenceLifeLineBorderColor #8295AD
+skinparam sequenceGroupBorderColor #506383
+skinparam sequenceGroupHeaderFontColor #14213B
+skinparam sequenceGroupBackgroundColor #E2EDFD
+hide footbox
+autonumber
+
+actor Student
+boundary "Task form" as View
+control TaskController as Controller
+control TaskManager as Manager
+participant TaskFactory as Factory
+participant TaskRepository as Repo
+participant FileStorage as Storage
+database "tasks.json + backups" as Disk
+
+Student -> View : Submit task input
+View -> Controller : create(request)
+Controller ->> Manager : create(request) via serial executor
+Manager -> Manager : Apply defaults and validate\nfields and subject reference
+alt Invalid input
+  Manager -->> Controller : Validation error
+  Controller -> View : Show errors on EDT
+else Valid input
+  Manager -> Factory : create(validatedRequest)
+  Factory --> Manager : typed task with ID
+  Manager -> Repo : insert(task)
+  Repo -> Repo : Check ID uniqueness and\nbuild candidate snapshot
+  Repo -> Storage : write(candidateSnapshot)
+  Storage -> Disk : Stage candidate, preserve the previous\nvalid snapshot if present, and replace live file
+  alt Committed
+    Storage --> Repo : success
+    Repo -> Repo : Publish committed snapshot
+    Repo --> Manager : saved task
+    Manager -->> Controller : Success
+    Controller -> View : Refresh and confirm on EDT
+  else Write rejected
+    Storage --> Repo : Storage error
+    Repo -> Repo : Retain existing snapshot
+    Repo --> Manager : Storage error
+    Manager -->> Controller : Storage error
+    Controller -> View : Report error on EDT
+  end
+end
+@enduml

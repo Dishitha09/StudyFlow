@@ -1,0 +1,54 @@
+@startuml
+title StudyFlow | Component architecture
+top to bottom direction
+skinparam backgroundColor #F8FAFD
+skinparam defaultFontName Segoe UI
+skinparam defaultFontColor #14213B
+skinparam shadowing false
+skinparam ArrowColor #506383
+skinparam componentBorderColor #345279
+skinparam componentBackgroundColor #EDF5FF
+skinparam interfaceBorderColor #345279
+skinparam packageBorderColor #7F94B4
+skinparam packageBackgroundColor #FFFFFF
+skinparam databaseBorderColor #345279
+skinparam databaseBackgroundColor #EDF5FF
+
+component "Application bootstrap\nMain + configuration" as Bootstrap
+
+package "Presentation" {
+  component "Swing views\nFlatLaf" as Views
+  component "Controllers\nEDT + serial executor" as Controllers
+  Views --> Controllers : user actions
+}
+
+package "Application and domain" {
+  component "Managers and SearchService" as Services
+  component "TaskFactory and sort strategies" as Policies
+  component "Domain entities and contracts" as Domain
+  Services --> Policies : creation and ordering
+  Services --> Domain : enforce business rules
+  Policies --> Domain
+}
+
+interface "Repository<T>" as Repository
+
+package "Local persistence" {
+  component "JSON repositories" as JsonRepositories
+  component "FileStorage\nJackson + backup recovery" as FileStorage
+  database "Local data\nJSON snapshots and backups" as Files
+  JsonRepositories --> FileStorage
+  FileStorage --> Files
+}
+
+component "Future integration adapters" as Integrations <<planned>>
+Bootstrap ..> Views : constructs
+Bootstrap ..> Controllers : constructs
+Bootstrap ..> Services : wires
+Bootstrap ..> JsonRepositories : binds
+Controllers --> Services : application operations
+Services ..> Repository : depends on contract
+JsonRepositories -up- Repository : implements
+JsonRepositories ..> Domain : maps snapshots
+Integrations ..> Services : future application ports
+@enduml

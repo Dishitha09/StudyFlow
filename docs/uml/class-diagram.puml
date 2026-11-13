@@ -1,0 +1,141 @@
+@startuml
+title StudyFlow | Domain class design
+top to bottom direction
+skinparam backgroundColor #F8FAFD
+skinparam defaultFontName Segoe UI
+skinparam defaultFontColor #14213B
+skinparam shadowing false
+skinparam ArrowColor #506383
+skinparam classAttributeIconSize 0
+skinparam classBorderColor #345279
+skinparam classBackgroundColor #EDF5FF
+skinparam classHeaderBackgroundColor #DDEAFE
+skinparam noteBackgroundColor #FFF6DB
+skinparam noteBorderColor #A17E3B
+hide empty members
+
+interface Searchable {
+  +matchesSearch(query: String): boolean
+}
+
+interface Prioritizable {
+  +getPriority(): Priority
+}
+
+interface "Comparable<Task>" as Comparable {
+  +compareTo(other: Task): int
+}
+
+abstract class Task {
+  -id: String
+  -title: String
+  -description: String
+  -subjectId: String [0..1]
+  -createdDate: LocalDate
+  -dueDate: LocalDate [0..1]
+  -priority: Priority
+  -status: TaskStatus
+  -subtasks: List<Task>
+  -recurrence: Recurrence
+  -successorId: String [0..1]
+  +updateStatus(status: TaskStatus): void
+  +markCompleted(): void
+  +isOverdue(today: LocalDate): boolean
+  +getDaysRemaining(today: LocalDate): OptionalLong
+  +addSubtask(task: Task): void
+  +removeSubtask(id: String): boolean
+  {abstract} +getType(): TaskType
+}
+
+class GeneralTask {
+  +getType(): TaskType
+}
+
+class Assignment {
+  -submissionType: String
+  -attachmentPath: String [0..1]
+  +getType(): TaskType
+}
+
+class Exam {
+  -examType: String
+  -preparationStatus: String
+  +getType(): TaskType
+}
+
+class StudySession {
+  -plannedDuration: Duration
+  -actualDuration: Duration [0..1]
+  +getType(): TaskType
+}
+
+class Subject {
+  -id: String
+  -name: String
+  -subjectCode: String
+  -description: String
+  -tags: List<String>
+  +addTag(tag: String): void
+  +removeTag(tag: String): void
+  +matchesSearch(query: String): boolean
+}
+
+class Note {
+  -id: String
+  -title: String
+  -content: String
+  -subjectId: String [0..1]
+  -createdAt: LocalDateTime
+  -updatedAt: LocalDateTime
+  -tags: List<String>
+  +updateContent(content: String): void
+  +addTag(tag: String): void
+  +matchesSearch(query: String): boolean
+}
+
+class Workspace {
+  -id: String
+  -name: String
+  -description: String
+  -subjectIds: List<String>
+  -createdAt: LocalDateTime
+  +addSubject(id: String): void
+  +removeSubject(id: String): void
+}
+
+class UserSettings {
+  -theme: Theme
+  -defaultPriority: Priority
+  -defaultAttendanceTarget: int
+  -notificationsEnabled: boolean
+  -focusDuration: Duration
+  -breakDuration: Duration
+  +validate(): void
+}
+
+Task ..|> Searchable
+Task ..|> Prioritizable
+Task ..|> Comparable
+Task <|-- GeneralTask
+Task <|-- Assignment
+Task <|-- Exam
+Task <|-- StudySession
+Task "0..1 parent" *-- "0..* children" Task : owns subtasks
+Task "0..*" --> "0..1" Subject : subjectId
+Note "0..*" --> "0..1" Subject : subjectId
+Workspace "0..*" o-- "0..*" Subject : subjectIds
+Subject ..|> Searchable
+Note ..|> Searchable
+
+note top of UserSettings
+  One local settings record.
+  Task creation reads its default priority.
+end note
+note top of Task
+  Task IDs are unique across the tree.
+  An owned subtask has exactly one parent.
+  The subtree is acyclic.
+  A successor ID records past generation,
+  even if the successor is later deleted.
+end note
+@enduml
