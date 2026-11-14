@@ -7,6 +7,7 @@ import com.studyflow.model.Task;
 import com.studyflow.model.UserSettings;
 import com.studyflow.model.Workspace;
 import com.studyflow.repository.FileStorage;
+import com.studyflow.repository.FocusRepository;
 import com.studyflow.repository.MemoryStorage;
 import com.studyflow.repository.NoteRepository;
 import com.studyflow.repository.SettingsRepository;
@@ -38,6 +39,7 @@ public final class StudyFlowContext implements AutoCloseable {
     private final WorkspaceManager workspaceManager;
     private final NoteManager noteManager;
     private final SearchService searchService;
+    private final FocusRepository focusRepository;
     private UserSettings settings;
 
     private StudyFlowContext(DataDirectoryLock lock, FileStorage storage, Clock clock) {
@@ -57,7 +59,9 @@ public final class StudyFlowContext implements AutoCloseable {
                 () -> new WorkspaceManager(repositories.workspaces(), subjects, clock));
         noteManager = validate(directory, "notes/notes.json",
                 () -> new NoteManager(clock, subjects, repositories.notes()));
-        searchService = new SearchService(taskManager, subjectManager, noteManager);
+        searchService = new SearchService(taskManager, subjectManager, noteManager, workspaceManager);
+        focusRepository = new FocusRepository(storage);
+        focusRepository.load();
     }
 
     public static StudyFlowContext open(Path dataDirectory) throws IOException {
@@ -177,6 +181,10 @@ public final class StudyFlowContext implements AutoCloseable {
 
     public SearchService searchService() {
         return searchService;
+    }
+
+    public FocusRepository focusRepository() {
+        return focusRepository;
     }
 
     public synchronized UserSettings settings() {

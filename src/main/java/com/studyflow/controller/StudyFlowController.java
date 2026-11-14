@@ -4,6 +4,7 @@ import com.studyflow.config.StudyFlowContext;
 import com.studyflow.factory.TaskDraft;
 import com.studyflow.model.Assignment;
 import com.studyflow.model.Exam;
+import com.studyflow.model.FocusRecord;
 import com.studyflow.model.Note;
 import com.studyflow.model.Priority;
 import com.studyflow.model.StudySession;
@@ -12,9 +13,11 @@ import com.studyflow.model.Task;
 import com.studyflow.model.TaskStatus;
 import com.studyflow.model.TaskType;
 import com.studyflow.model.Theme;
+import com.studyflow.model.UserSettings;
 import com.studyflow.model.Workspace;
 import com.studyflow.service.TaskFilter;
 import com.studyflow.service.TaskManager;
+import com.studyflow.service.ReminderService;
 import com.studyflow.strategy.SortByCreationDate;
 import com.studyflow.strategy.SortByDeadline;
 import com.studyflow.strategy.SortByPriority;
@@ -23,6 +26,7 @@ import com.studyflow.strategy.TaskSortStrategy;
 import com.studyflow.utils.ValidationUtils;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.util.HashSet;
 import java.util.List;
@@ -38,6 +42,7 @@ public final class StudyFlowController {
     private final StudyFlowContext context;
     private final Executor worker;
     private final Clock clock;
+    private final ReminderService reminders = new ReminderService();
 
     public StudyFlowController(StudyFlowContext context, Executor worker, Clock clock) {
         this.context = context;
@@ -51,6 +56,44 @@ public final class StudyFlowController {
 
     public void query(TaskQuery query, Consumer<List<Task>> success, Consumer<String> failure) {
         submit(() -> taskRows(query), success, failure);
+    }
+
+    public void search(String text, Consumer<com.studyflow.service.SearchService.SearchResults> success,
+                       Consumer<String> failure) {
+        submit(() -> context.searchService().search(text), success, failure);
+    }
+
+    public void reminders(Consumer<List<String>> success, Consumer<String> failure) {
+        submit(() -> reminders.collect(context.taskManager().findAll(), LocalDate.now(clock),
+                context.settings().isNotificationsEnabled()), success, failure);
+    }
+
+    public void recordFocus(String id, String taskId, String subjectId, Duration planned, Duration actual) {
+        if (!context.focusRepository().existsById(id)) {
+            context.focusRepository().insert(new FocusRecord(id, taskId, subjectId, clock.instant(), planned, actual));
+        }
+    }
+
+    public void changeNotifications(boolean enabled) {
+        var settings = context.settings();
+        settings.setNotificationsEnabled(enabled);
+        context.saveSettings(settings);
+    }
+
+    public void setRecurrence(String id, com.studyflow.model.Recurrence recurrence) {
+        context.taskManager().setRecurrence(id, recurrence);
+    }
+
+    public void addSubtask(String id, String title, LocalDate due) {
+        context.taskManager().createSubtask(id, new TaskDraft(title, "", null, due, null, new TaskDraft.General()));
+    }
+
+    public void setSubtaskStatus(String rootId, String childId, TaskStatus status) {
+        context.taskManager().updateSubtaskStatus(rootId, childId, status);
+    }
+
+    public void removeSubtask(String rootId, String childId) {
+        context.taskManager().removeSubtask(rootId, childId);
     }
 
     public void change(Runnable command, TaskQuery query, Consumer<Records> success, Consumer<String> failure) {
@@ -160,8 +203,9 @@ public final class StudyFlowController {
         int assignments = Math.toIntExact(upcoming.stream().filter(task -> task.getType() == TaskType.ASSIGNMENT).count());
         DashboardData dashboard = new DashboardData(today, all.size(), completed, all.size() - completed, overdue,
                 assignments, tasks.today(), upcoming, tasks.smartPriority(), subjects);
+        UserSettings settings = context.settings();
         return new Records(dashboard, taskRows(query), subjects, context.workspaceManager().findAll(),
-                context.noteManager().findAll(), context.settings().getTheme());
+                context.noteManager().findAll(), settings.getTheme(), all, settings, context.focusRepository().load().size());
     }
 
     private List<Task> taskRows(TaskQuery query) {
@@ -214,5 +258,6 @@ public final class StudyFlowController {
                                 List<Task> smartPriority, List<Subject> subjects) { }
 
     public record Records(DashboardData dashboard, List<Task> tasks, List<Subject> subjects,
-                          List<Workspace> workspaces, List<Note> notes, Theme theme) { }
+                          List<Workspace> workspaces, List<Note> notes, Theme theme, List<Task> allTasks,
+                          UserSettings settings, int completedSessions) { }
 }

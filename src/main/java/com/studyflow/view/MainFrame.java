@@ -12,6 +12,11 @@ import com.studyflow.view.academic.AcademicPanel;
 import com.studyflow.view.dashboard.DashboardPanel;
 import com.studyflow.view.navigation.SidebarPanel;
 import com.studyflow.view.navigation.SidebarPanel.Page;
+import com.studyflow.view.planning.CalendarPanel;
+import com.studyflow.view.planning.FocusPanel;
+import com.studyflow.view.planning.KanbanPanel;
+import com.studyflow.view.planning.SearchPanel;
+import com.studyflow.view.planning.SubtaskDialog;
 import com.studyflow.view.settings.SettingsPanel;
 import com.studyflow.view.tasks.TaskPanel;
 
@@ -40,6 +45,13 @@ public final class MainFrame extends JFrame {
     private final AcademicPanel workspaces;
     private final AcademicPanel notes;
     private final SettingsPanel settings;
+    private final CalendarPanel calendar;
+    private final KanbanPanel kanban;
+    private final FocusPanel focus;
+    private final SearchPanel search;
+    private final javax.swing.Timer reminderTimer;
+    private final javax.swing.JTextArea reminderText = new javax.swing.JTextArea(9, 48);
+    private final JButton reminderButton = new JButton("Reminders");
     private final JLabel feedback = new JLabel("Loading your workspace…") {
         @Override
         public Color getForeground() {
@@ -53,6 +65,8 @@ public final class MainFrame extends JFrame {
     private boolean busy;
     private boolean closing;
     private boolean error;
+    private String pendingTaskSelection;
+    private boolean notificationsEnabled;
 
     public MainFrame(AppConfig config, StudyFlowController controller, Theme theme) {
         super(config.name());
@@ -71,12 +85,21 @@ public final class MainFrame extends JFrame {
         dashboard = new DashboardPanel(this::dashboardAction, id -> change(
                 () -> controller.changeStatus(id, TaskStatus.COMPLETED), "Task completed.", null));
         tasks = new TaskPanel(new TaskActions());
+        tasks.addPlanningAction(this::planTask);
         AcademicActions academicActions = new AcademicActions();
         subjects = new AcademicPanel(AcademicPanel.Kind.SUBJECTS, academicActions);
         workspaces = new AcademicPanel(AcademicPanel.Kind.WORKSPACES, academicActions);
         notes = new AcademicPanel(AcademicPanel.Kind.NOTES, academicActions);
-        settings = new SettingsPanel(this::selectTheme);
+        settings = new SettingsPanel(this::selectTheme, enabled -> change(
+                () -> controller.changeNotifications(enabled), "Reminder preference saved.", null));
         settings.showTheme(theme);
+        calendar = new CalendarPanel(this::openTask);
+        kanban = new KanbanPanel((id, status) -> change(() -> controller.changeStatus(id, status),
+                "Task moved.", null), this::openTask);
+        focus = new FocusPanel(session -> change(() -> controller.recordFocus(session.id(), session.taskId(),
+                session.subjectId(), session.planned(), session.actual()), "Focus session saved.",
+                () -> focusSaved(true)));
+        search = new SearchPanel(this::search, this::openResult);
 
         content.add(dashboard, Page.DASHBOARD.name());
         content.add(tasks, Page.TASKS.name());
@@ -84,34 +107,43 @@ public final class MainFrame extends JFrame {
         content.add(workspaces, Page.WORKSPACES.name());
         content.add(notes, Page.NOTES.name());
         content.add(settings, Page.SETTINGS.name());
+        content.add(calendar, Page.CALENDAR.name());
+        content.add(kanban, Page.KANBAN.name());
+        content.add(focus, Page.FOCUS.name());
+        content.add(search, Page.SEARCH.name());
         for (Page page : Page.values()) {
             if (page.availableStage() > 0) {
                 content.add(availability(page.title(), page.availableStage()), page.name());
             }
         }
-        JPanel focus = availability("Focus session", 8);
-        JButton back = new JButton("Back to dashboard");
-        back.addActionListener(event -> navigate(Page.DASHBOARD));
-        JPanel footer = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.LEADING, 0, 0));
-        footer.add(back);
-        focus.add(footer, BorderLayout.PAGE_END);
-        content.add(focus, "FOCUS");
-
         feedback.setName("workspaceStatus");
         feedback.putClientProperty("html.disable", Boolean.TRUE);
         feedback.setBorder(BorderFactory.createEmptyBorder(5, 27, 8, 20));
         JPanel workspace = new JPanel(new BorderLayout());
         workspace.add(content, BorderLayout.CENTER);
-        workspace.add(feedback, BorderLayout.PAGE_END);
+        JPanel footer = new JPanel(new BorderLayout(12, 0));
+        footer.add(feedback, BorderLayout.CENTER);
+        reminderButton.setName("remindersButton");
+        reminderButton.setVisible(false);
+        reminderText.setEditable(false);
+        reminderText.setWrapStyleWord(true);
+        reminderText.setLineWrap(true);
+        reminderButton.addActionListener(event -> javax.swing.JOptionPane.showMessageDialog(this,
+                new javax.swing.JScrollPane(reminderText), "Task reminders", javax.swing.JOptionPane.INFORMATION_MESSAGE));
+        footer.add(reminderButton, BorderLayout.LINE_END);
+        workspace.add(footer, BorderLayout.PAGE_END);
         add(sidebar, BorderLayout.LINE_START);
         add(workspace, BorderLayout.CENTER);
         navigate(Page.DASHBOARD);
+        reminderTimer = new javax.swing.Timer(60_000, event -> refreshReminders());
         setBusy(true);
         controller.load(taskQuery, records -> {
             if (!closing) {
                 showRecords(records);
                 setBusy(false);
                 showFeedback(" ", false);
+                refreshReminders();
+                reminderTimer.start();
             }
         }, this::showFailure);
     }
@@ -149,10 +181,7 @@ public final class MainFrame extends JFrame {
                 navigate(Page.NOTES);
                 notes.openCreate();
             }
-            case START_FOCUS -> {
-                sidebar.showPage(Page.DASHBOARD);
-                pages.show(content, "FOCUS");
-            }
+            case START_FOCUS -> navigate(Page.FOCUS);
             case OPEN_ATTENDANCE -> navigate(Page.ATTENDANCE);
         }
     }
@@ -170,12 +199,18 @@ public final class MainFrame extends JFrame {
             sidebar.applyColors();
         }
         settings.showTheme(theme);
+        notificationsEnabled = records.settings().isNotificationsEnabled();
+        settings.showNotifications(notificationsEnabled);
+        reminderButton.setVisible(notificationsEnabled && !reminderText.getText().isBlank());
         dashboard.showData(records.dashboard());
         tasks.showTasks(records.tasks(), records.subjects());
         subjects.showRecords(records.subjects(), records.workspaces(), records.notes());
         workspaces.showRecords(records.subjects(), records.workspaces(), records.notes());
         notes.showRecords(records.subjects(), records.workspaces(), records.notes());
         taskSubjects = records.subjects();
+        calendar.showTasks(records.allTasks(), taskSubjects);
+        kanban.showTasks(records.allTasks(), taskSubjects);
+        focus.showData(records.allTasks(), taskSubjects, records.settings(), records.completedSessions());
     }
 
     private void query(TaskQuery query) {
@@ -187,6 +222,10 @@ public final class MainFrame extends JFrame {
             if (!closing) {
                 taskQuery = query;
                 tasks.showTasks(rows, taskSubjects);
+                if (pendingTaskSelection != null) {
+                    tasks.selectTask(pendingTaskSelection);
+                    pendingTaskSelection = null;
+                }
                 setBusy(false);
                 showFeedback(" ", false);
             }
@@ -207,6 +246,7 @@ public final class MainFrame extends JFrame {
                     afterSave.run();
                 }
                 showFeedback(success, false);
+                refreshReminders();
             }
         }, this::showFailure);
     }
@@ -214,7 +254,9 @@ public final class MainFrame extends JFrame {
     private void showFailure(String message) {
         if (!closing) {
             settings.showTheme(theme);
+            settings.showNotifications(notificationsEnabled);
             tasks.failEdit(message);
+            focusSaved(false);
             setBusy(false);
             showFeedback(message, true);
         }
@@ -235,12 +277,88 @@ public final class MainFrame extends JFrame {
         workspaces.setBusy(busy);
         notes.setBusy(busy);
         settings.setBusy(busy);
+        kanban.setBusy(busy);
+        focus.setBusy(busy);
+        search.setBusy(busy);
     }
 
     public void setClosing() {
         closing = true;
+        reminderTimer.stop();
+        focus.stop();
         setBusy(true);
         showFeedback("Closing…", false);
+    }
+
+    private void focusSaved(boolean saved) {
+        focus.finishSave(saved);
+    }
+
+    private void refreshReminders() {
+        if (closing || !notificationsEnabled) {
+            return;
+        }
+        controller.reminders(messages -> {
+            if (!closing && notificationsEnabled && !messages.isEmpty()) {
+                reminderText.append(String.join("\n", messages) + "\n");
+                reminderText.setCaretPosition(0);
+                reminderButton.setVisible(true);
+            }
+        }, message -> { if (!closing) showFeedback(message, true); });
+    }
+
+    private void openTask(String id) {
+        if (!busy) {
+            navigate(Page.TASKS);
+            pendingTaskSelection = id;
+            tasks.clearFilters();
+        }
+    }
+
+    private void openResult(SearchPanel.Result result) {
+        switch (result.type()) {
+            case "Task" -> openTask(result.id());
+            case "Subject" -> { navigate(Page.SUBJECTS); subjects.selectRecord(result.id()); }
+            case "Workspace" -> { navigate(Page.WORKSPACES); workspaces.selectRecord(result.id()); }
+            case "Note" -> { navigate(Page.NOTES); notes.selectRecord(result.id()); }
+            default -> throw new IllegalArgumentException("Unknown search result: " + result.type());
+        }
+    }
+
+    private void search(String query) {
+        if (busy || closing) {
+            return;
+        }
+        setBusy(true);
+        controller.search(query, results -> {
+            if (!closing) {
+                List<SearchPanel.Result> rows = new java.util.ArrayList<>();
+                results.tasks().forEach(task -> rows.add(new SearchPanel.Result("Task", task.getId(), task.getTitle(),
+                        task.getDescription())));
+                results.subjects().forEach(item -> rows.add(new SearchPanel.Result("Subject", item.getId(),
+                        item.getName(), item.getSubjectCode())));
+                results.workspaces().forEach(item -> rows.add(new SearchPanel.Result("Workspace", item.getId(),
+                        item.getName(), item.getDescription())));
+                results.notes().forEach(item -> rows.add(new SearchPanel.Result("Note", item.getId(), item.getTitle(),
+                        item.getContent().lines().findFirst().orElse(""))));
+                search.showResults(rows);
+                setBusy(false);
+            }
+        }, this::showFailure);
+    }
+
+    private void planTask(com.studyflow.model.Task task) {
+        SubtaskDialog.Edit edit = SubtaskDialog.show(this, task);
+        if (edit == null) {
+            return;
+        }
+        Runnable command = switch (edit) {
+            case SubtaskDialog.Repeat repeat -> () -> controller.setRecurrence(task.getId(), repeat.value());
+            case SubtaskDialog.Add add -> () -> controller.addSubtask(task.getId(), add.title(), add.due());
+            case SubtaskDialog.Status status -> () -> controller.setSubtaskStatus(task.getId(), status.id(), status.status());
+            case SubtaskDialog.Remove remove -> () -> controller.removeSubtask(task.getId(), remove.id());
+        };
+        change(command, "Task planning updated.", null);
     }
 
     private final class TaskActions implements TaskPanel.Actions {

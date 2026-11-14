@@ -129,6 +129,16 @@ public final class AcademicPanel extends JPanel {
         openEditor(null);
     }
 
+    public void selectRecord(String id) {
+        for (int index = 0; index < rows.size(); index++) {
+            if (rows.get(index).record().getId().equals(id)) {
+                list.setSelectedIndex(index);
+                list.ensureIndexIsVisible(index);
+                return;
+            }
+        }
+    }
+
     public void setBusy(boolean busy) {
         this.busy = busy;
         if (form != null) {

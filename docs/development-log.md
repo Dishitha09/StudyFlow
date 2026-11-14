@@ -43,3 +43,8 @@
 
 - Built the main dashboard, task management, academic pages, navigation and persistent theme settings. Fixed academic create forms and verified responsive layouts.
 - Passed 75 tests and a two-process Windows Swing smoke check. Updated the README, requirements, architecture and UML.
+
+### 14 November · Stage 8
+
+- Added Calendar, Kanban, Focus with saved sessions, in-app reminders, global search, recurrence and subtask controls.
+- Passed 80 tests and exercised the calendar and Kanban controls in a native Swing probe.

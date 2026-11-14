@@ -231,6 +231,43 @@ public final class TaskPanel extends JPanel {
         openForm(null);
     }
 
+    public void selectTask(String id) {
+        for (int row = 0; row < tableModel.getRowCount(); row++) {
+            if (tableModel.rows.get(row).getId().equals(id)) {
+                table.setRowSelectionInterval(row, row);
+                table.scrollRectToVisible(table.getCellRect(row, 0, true));
+                return;
+            }
+        }
+    }
+
+    public Task currentTask() {
+        return selectedTask();
+    }
+
+    public void clearFilters() {
+        resetQuery();
+    }
+
+    public void addPlanningAction(java.util.function.Consumer<Task> action) {
+        getInputMap(WHEN_ANCESTOR_OF_FOCUSED_COMPONENT).put(
+                javax.swing.KeyStroke.getKeyStroke("ctrl shift P"), "taskPlanning");
+        getActionMap().put("taskPlanning", new javax.swing.AbstractAction() {
+            @Override
+            public void actionPerformed(java.awt.event.ActionEvent event) {
+                if (!busy && selectedTask() != null) {
+                    action.accept(selectedTask());
+                }
+            }
+        });
+        javax.swing.JPopupMenu menu = new javax.swing.JPopupMenu();
+        javax.swing.JMenuItem planning = new javax.swing.JMenuItem("Recurrence and subtasks…");
+        planning.addActionListener(event -> getActionMap().get("taskPlanning").actionPerformed(event));
+        menu.add(planning);
+        table.setComponentPopupMenu(menu);
+        table.setToolTipText("Right-click the selected task for recurrence and subtasks (Ctrl+Shift+P).");
+    }
+
     private void openEdit() {
         Task task = selectedTask();
         if (task != null) {

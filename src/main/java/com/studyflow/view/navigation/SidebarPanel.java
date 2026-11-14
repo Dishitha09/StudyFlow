@@ -29,11 +29,13 @@ public final class SidebarPanel extends JPanel {
     public enum Page {
         DASHBOARD("Dashboard", "navDashboard", 0),
         TASKS("My Tasks", "navTasks", 0),
-        CALENDAR("Calendar", "navCalendar", 8),
-        KANBAN("Kanban Board", "navKanban", 8),
+        CALENDAR("Calendar", "navCalendar", 0),
+        KANBAN("Kanban Board", "navKanban", 0),
         SUBJECTS("Subjects", "navSubjects", 0),
         WORKSPACES("Workspaces", "navWorkspaces", 0),
         NOTES("Notes", "navNotes", 0),
+        SEARCH("Search", "navSearch", 0),
+        FOCUS("Focus", "navFocus", 0),
         MATERIALS("Study Materials", "navMaterials", 10),
         ATTENDANCE("Attendance", "navAttendance", 9),
         ANALYTICS("Analytics", "navAnalytics", 8),
@@ -168,6 +170,14 @@ public final class SidebarPanel extends JPanel {
                     }
                     case SUBJECTS -> book(canvas);
                     case WORKSPACES, MATERIALS -> path(canvas, 2, 5, 7, 5, 9, 7, 16, 7, 16, 15, 2, 15, 2, 5);
+                    case SEARCH -> {
+                        canvas.drawOval(2, 2, 10, 10);
+                        canvas.drawLine(11, 11, 16, 16);
+                    }
+                    case FOCUS -> {
+                        canvas.drawOval(2, 2, 14, 14);
+                        path(canvas, 9, 5, 9, 9, 12, 10);
+                    }
                     case NOTES -> {
                         canvas.drawRoundRect(4, 2, 10, 14, 3, 3);
                         canvas.drawLine(6, 7, 12, 7);

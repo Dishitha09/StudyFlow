@@ -8,6 +8,7 @@ import java.awt.FlowLayout;
 import java.util.function.Consumer;
 import javax.swing.BorderFactory;
 import javax.swing.ButtonGroup;
+import javax.swing.JCheckBox;
 import javax.swing.JPanel;
 import javax.swing.JRadioButton;
 
@@ -15,8 +16,9 @@ import javax.swing.JRadioButton;
 public final class SettingsPanel extends JPanel {
     private final JRadioButton light = new JRadioButton("Light");
     private final JRadioButton dark = new JRadioButton("Dark");
+    private final JCheckBox notifications = new JCheckBox("Show task reminders");
 
-    public SettingsPanel(Consumer<Theme> changeTheme) {
+    public SettingsPanel(Consumer<Theme> changeTheme, Consumer<Boolean> changeNotifications) {
         super(new BorderLayout(0, 20));
         setBorder(BorderFactory.createEmptyBorder(26, 28, 24, 28));
         add(ViewStyle.heading("Settings"), BorderLayout.PAGE_START);
@@ -41,7 +43,13 @@ public final class SettingsPanel extends JPanel {
         dark.addActionListener(event -> changeTheme.accept(Theme.DARK));
         themes.add(light);
         themes.add(dark);
-        card.add(themes, BorderLayout.CENTER);
+        JPanel preferences = new JPanel(new java.awt.GridLayout(0, 1, 0, 9));
+        preferences.setOpaque(false);
+        preferences.add(themes);
+        notifications.setName("reminderPreference");
+        notifications.addActionListener(event -> changeNotifications.accept(notifications.isSelected()));
+        preferences.add(notifications);
+        card.add(preferences, BorderLayout.CENTER);
 
         JPanel body = new JPanel(new BorderLayout());
         body.setOpaque(false);
@@ -57,5 +65,10 @@ public final class SettingsPanel extends JPanel {
     public void setBusy(boolean busy) {
         light.setEnabled(!busy);
         dark.setEnabled(!busy);
+        notifications.setEnabled(!busy);
+    }
+
+    public void showNotifications(boolean enabled) {
+        notifications.setSelected(enabled);
     }
 }
