@@ -2,6 +2,18 @@
 
 StudyFlow is a local-first Java desktop workspace for university tasks, subjects, workspaces and notes.
 
+![The StudyFlow dashboard running with sample academic data](docs/screenshots/dashboard.png)
+
+## Run the packaged application
+
+With Java 21 installed, open a terminal in the directory containing `StudyFlow.jar` and run:
+
+```powershell
+java -jar StudyFlow.jar
+```
+
+The app reads and writes `data` in the working directory. Use `java -jar StudyFlow.jar --data-dir "C:\StudyFlow data"` to choose another profile.
+
 ## Prerequisites
 
 - JDK 21. On Windows, install or extract an x64 or ARM64 build as appropriate. Set `JAVA_HOME` to the JDK directory and put its `bin` directory on `PATH`. [Microsoft OpenJDK installation](https://learn.microsoft.com/en-us/java/openjdk/install)
@@ -30,18 +42,31 @@ $env:Path = "$env:JAVA_HOME\bin;$mavenBin;$env:Path"
 mvn clean compile
 mvn test
 mvn exec:java '-Dexec.mainClass=com.studyflow.Main'
+mvn clean package
 ```
+
+The Maven package command builds `target/StudyFlow.jar` with its runtime dependencies.
 
 StudyFlow opens to the Dashboard. It shows live task totals, today's deadlines, the next seven days of deadlines, and Smart Priority. Use **Complete** on a due-today task to update its status and the dashboard counts.
 
 - **My Tasks** supports general tasks, assignments, exams and study sessions. Select a row to view its details or change its priority or status. Use **Apply** to combine search, filters, date bounds and sorting.
 - **Subjects**, **Workspaces** and **Notes** support adding, editing and deleting records. Link a note to a subject or select multiple subjects for a workspace. A subject with linked records must be unlinked before deletion.
 - **Settings** switches between Light and Dark immediately and saves the theme for the next launch.
-- Calendar, Kanban, Study Materials, Attendance, Analytics and the dashboard Focus shortcut show the stage in which each feature becomes available.
+- **Calendar**, **Kanban**, **Search**, and **Focus** work from your local tasks and records. Use a task’s context menu to manage recurrence and subtasks.
+- **Attendance** records class outcomes and corrections, and calculates classes you need to attend or can miss. **Analytics** summarizes recorded task, focus and attendance activity.
+- **Study Materials** imports PDFs. The **Study Assistant** retrieves cached, page-numbered passages and creates local extractive study aids.
+
+## Optional integrations
+
+- **Google Calendar** requires Google Calendar API enabled and a Desktop OAuth application. Set `STUDYFLOW_GOOGLE_CLIENT_ID` and `STUDYFLOW_GOOGLE_CLIENT_SECRET` in the launch environment. Open **Settings → Integrations → Connect** and use the browser consent flow. Select dated tasks and sync them to your primary calendar or export them as an `.ics` file offline. Connect again after restarting StudyFlow. [Google Desktop OAuth setup](https://developers.google.com/identity/protocols/oauth2/native-app)
+- **Spotify** stores a saved `https://open.spotify.com` link and opens it using your system browser. Playback belongs to Spotify.
+- **OpenAI** uses `OPENAI_API_KEY` and optionally `STUDYFLOW_OPENAI_MODEL`. Settings can test model access without sending document content. A remote study request sends selected passages only after confirmation. Local study modes work without credentials. [OpenAI Responses API](https://developers.openai.com/api/reference/resources/responses/methods/create)
+
+Scanned PDFs without a text layer need OCR before text retrieval. The app uses one-way, explicitly selected Google Calendar sync. Optional live services require your own accounts and were tested through offline or simulated checks in this build.
 
 ## Local data and recovery
 
-By default, StudyFlow uses the `data` directory next to `pom.xml`. It writes separate JSON files for tasks, subjects, workspaces, notes and settings. To launch against an alternate location, pass `--data-dir` to the application via Maven Exec.
+By default, StudyFlow uses the `data` directory in the working directory. It writes separate JSON files for tasks, academic records, settings, focus history, attendance and integration links. Managed PDFs and extracted text are stored separately. To launch against an alternate location with Maven, pass `--data-dir` to the application via Maven Exec.
 
 ```powershell
 mvn exec:java "-Dexec.args=--data-dir 'C:/StudyFlow data'"
@@ -75,3 +100,6 @@ Use `--data-dir` before `--restore` when recovering an alternate profile. Restar
 - [Java concept mapping](docs/java-concept-mapping.md)
 - [Stage reports](docs/stage-reports)
 - [Stage 7 GUI and dashboard report](docs/stage-reports/stage-7-report.md)
+- [Testing](docs/testing.md)
+- [User manual](docs/user-manual.md)
+- [Project report](docs/project-report.md)

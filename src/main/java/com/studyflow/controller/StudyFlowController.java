@@ -1,6 +1,7 @@
 package com.studyflow.controller;
 
 import com.studyflow.config.StudyFlowContext;
+import com.studyflow.config.AppLog;
 import com.studyflow.factory.TaskDraft;
 import com.studyflow.model.Assignment;
 import com.studyflow.model.Exam;
@@ -186,6 +187,7 @@ public final class StudyFlowController {
     public void change(Runnable command, TaskQuery query, Consumer<Records> success, Consumer<String> failure) {
         submit(() -> {
             command.run();
+            AppLog.event("desktop.change.completed");
             return snapshot(query);
         }, success, failure);
     }
@@ -329,6 +331,7 @@ public final class StudyFlowController {
                     T result = work.get();
                     SwingUtilities.invokeLater(() -> success.accept(result));
                 } catch (RuntimeException error) {
+                    AppLog.failure("desktop.operation.failed", error);
                     String message = error.getMessage() == null ? "StudyFlow could not complete the request."
                             : error.getMessage();
                     SwingUtilities.invokeLater(() -> failure.accept(message));

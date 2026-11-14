@@ -14,13 +14,17 @@ skinparam rectangleBorderColor #7F94B4
 skinparam rectangleBackgroundColor #FFFFFF
 
 actor Student
-rectangle "StudyFlow | Stages 1 to 7" {
+rectangle "StudyFlow" {
   usecase "Manage tasks and subtasks" as Task
   usecase "Create a task" as Create
   usecase "Validate task fields\nand references" as Validate
   usecase "Review deadlines, filters,\npriority and status groups" as Review
   usecase "Review dashboard and\ncomplete today's tasks" as Dashboard
   usecase "Choose an application theme" as Theme
+  usecase "Plan deadlines and record focus" as Plan
+  usecase "Track class attendance" as Attendance
+  usecase "Retrieve PDF text and make study aids" as Materials
+  usecase "Export or sync dated tasks" as Export
   usecase "Manage subjects and\nworkspace membership" as Organize
   usecase "Manage subject notes" as Note
   usecase "Search tasks, subjects\nand notes" as Search
@@ -38,6 +42,10 @@ Student -- Create
 Student -- Review
 Student -- Dashboard
 Student -- Theme
+Student -- Plan
+Student -- Attendance
+Student -- Materials
+Student -- Export
 Student -- Organize
 Student -- Note
 Student -- Search

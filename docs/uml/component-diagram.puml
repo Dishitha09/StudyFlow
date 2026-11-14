@@ -42,7 +42,7 @@ package "Local persistence" {
   FileStorage --> Files
 }
 
-component "Future integration adapters" as Integrations <<planned>>
+component "Optional adapters\nGoogle Calendar, iCalendar, Spotify, OpenAI" as Integrations
 Bootstrap ..> Views : constructs
 Bootstrap ..> Controllers : constructs
 Bootstrap ..> Services : wires
@@ -52,7 +52,7 @@ Controllers --> Services : application operations
 Services ..> Repository
 JsonRepositories -up- Repository : implements
 JsonRepositories ..> Domain : maps snapshots
-Integrations ..> Services
+Services ..> Integrations : explicit operations
 note right of Services
   Academic services resolve subject IDs centrally.
   Global search combines results from task,

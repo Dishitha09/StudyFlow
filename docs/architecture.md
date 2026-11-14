@@ -69,6 +69,8 @@ Stage 8 can replace the sidebar's Calendar and Kanban availability views, query 
 
 `MainFrame` hosts a persistent `SidebarPanel` and switches content with Swing's `CardLayout`. `DashboardPanel` renders a controller snapshot that uses the same task queries as the task engine. `TaskPanel` sends combined criteria to the controller and delegates record editing to `TaskFormDialog`. Subjects, workspaces and notes share an academic record panel and dispatch typed commands to their existing managers. The controller serializes commands on the application worker and sends results to the EDT. A successful settings save updates FlatLaf and the visible theme. The next launch loads that preference from the existing settings repository.
 
+Calendar and Kanban project existing task records. Focus intervals use a monotonic timer and save completed records under the local profile. Attendance retains class-level records and subject targets, with integer arithmetic for forecasts. `MaterialLibrary` keeps PDF binaries, extracted page chunks, and JSON metadata in separate locations. `StudyAssistant` uses local retrieval and an optional `AIProvider`. Google Calendar, iCalendar export and Spotify are adapter operations behind the desktop controller. The executable JAR bundles the runtime dependencies with Maven Shade.
+
 ## UML
 
 - [Use case](uml/use-case-diagram.png) · [PlantUML](uml/use-case-diagram.puml)

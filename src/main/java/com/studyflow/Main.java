@@ -1,6 +1,7 @@
 package com.studyflow;
 
 import com.studyflow.config.AppConfig;
+import com.studyflow.config.AppLog;
 import com.studyflow.config.StudyFlowContext;
 import com.studyflow.controller.StudyFlowController;
 import com.studyflow.model.Theme;
@@ -74,11 +75,13 @@ public final class Main {
     }
 
     private static void initialize(AppConfig config, ExecutorService worker, CompletableFuture<Void> finished) {
+        AppLog.event("application.start");
         try {
             Clock clock = Clock.systemDefaultZone();
             StudyFlowContext context = StudyFlowContext.open(config.dataDirectory(), clock);
             SwingUtilities.invokeLater(() -> openWindow(config, context, worker, finished, clock));
         } catch (IOException | RuntimeException error) {
+            AppLog.failure("application.start.failed", error);
             worker.shutdown();
             SwingUtilities.invokeLater(() -> {
                 showError("StudyFlow startup error", error);
@@ -118,6 +121,7 @@ public final class Main {
             Exception failure = startupError;
             try {
                 context.close();
+                AppLog.event("application.stop");
             } catch (IOException closeError) {
                 if (failure == null) {
                     failure = closeError;

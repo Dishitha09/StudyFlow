@@ -5,3 +5,8 @@
 /.vscode/
 *.iml
 *.log
+.env
+.env.*
+client_secret*.json
+credentials.json
+*.pem

@@ -10,7 +10,7 @@ University students often track deadlines, coursework, study notes, and subject 
 
 ## Scope and constraints
 
-Stages 1–7 deliver the system design, a Maven desktop application, an independently testable domain and task engine, academic organization and search services, persistent local data, and the main Swing interface. The roadmap lists the subsequent productivity and academic modules.
+The delivered Java desktop application includes the task engine, academic records, JSON persistence, the Swing workspace, planning tools, attendance, PDF retrieval and optional external integrations. Core workflows run locally. Configured integrations remain independent from core records.
 
 Use Java 21, Swing and AWT, FlatLaf, Java Time, Java collections, Maven, Jackson Databind, local JSON, JUnit Jupiter, and Git. Use Java threads and `ExecutorService` when background work is needed. Use Maven's standard source and test layout, Java release 21, UTF-8, and compiler, Surefire, and Exec plugins with compatible versions. VS Code and IntelliJ IDEA are supported development options. The required terminal commands are `mvn clean compile`, `mvn test`, and `mvn exec:java -Dexec.mainClass="com.studyflow.Main"`.
 
@@ -128,12 +128,12 @@ Task register listings, search, filters, date views and Kanban grouping return r
 
 Each stage shall preserve previous behavior, record executed verification and outcomes in `docs/stage-reports/stage-N.md`, update the development log, and create a Git checkpoint. The project shall maintain `docs/java-concept-mapping.md` with syllabus concept locations, rationale, and viva explanations. Separate educational examples may demonstrate techniques unsuitable for production, with later-stage coverage identified explicitly.
 
-## Future requirements
+## Release-stage requirements
 
-| Stage | Planned requirements |
+| Stage | Requirements |
 |---|---|
-| 8 — Productivity | Monthly calendar, drag-and-drop Kanban, notifications, focus sessions, global search interface, task recurrence and subtask controls, and productivity analytics. |
+| 8 — Productivity | Monthly calendar, Kanban status controls, reminders, focus sessions, global search, and task recurrence and subtask controls. |
 | 9 — Attendance | Subject-wise attendance, percentage, target, maximum classes that can be missed, and classes required to reach a target. |
 | 10 — Materials and AI | Subject-wise study material library, document and PDF uploads, PDF text extraction, topic-based document retrieval, AI summaries and study assistance, and generated revision questions. |
-| 11 — Integrations | Google Calendar synchronization with OAuth, optional Spotify access, and an external LLM provider. Credentials and client integration belong to this stage. |
+| 11 — Integrations | Explicit one-way Google Calendar synchronization with desktop OAuth, offline iCalendar export, Spotify shortcuts, and an optional external AI provider. |
 | 12 — Deployment | Expanded integration and GUI testing, executable JAR, final project report and UML, and source ZIP. |

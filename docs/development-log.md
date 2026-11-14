@@ -60,3 +60,8 @@
 ### 14 November · Stage 11
 
 - Added optional Google Calendar sync, offline iCalendar export, Spotify shortcuts, OpenAI transport and local analytics. Passed 129 tests using offline fixtures and simulated transport.
+
+### 14 November · Stage 12
+
+- Added executable Maven packaging and structured lifecycle logging. The build passed 129 tests and the packaged app launched and shut down normally on Windows.
+- Rendered the project report and user manual, updated UML, and captured 12 live screenshots with synthetic records for the submission.
