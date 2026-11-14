@@ -21,11 +21,7 @@ public final class Workspace implements Identifiable {
         setName(name);
         setDescription(description);
         this.createdAt = ValidationUtils.required(createdAt, "Workspace creation time");
-        for (String subjectId : ValidationUtils.required(subjectIds, "Workspace subject IDs")) {
-            if (!addSubject(subjectId)) {
-                throw new IllegalArgumentException("Duplicate subject ID in workspace: " + subjectId);
-            }
-        }
+        setSubjectIds(subjectIds);
     }
 
     @Override
@@ -51,6 +47,18 @@ public final class Workspace implements Identifiable {
 
     public List<String> getSubjectIds() {
         return List.copyOf(subjectIds);
+    }
+
+    public void setSubjectIds(List<String> members) {
+        Set<String> checked = new LinkedHashSet<>();
+        for (String member : ValidationUtils.required(members, "Workspace subject IDs")) {
+            String id = ValidationUtils.requiredText(member, "Subject ID");
+            if (!checked.add(id)) {
+                throw new IllegalArgumentException("Duplicate subject ID in workspace: " + id);
+            }
+        }
+        subjectIds.clear();
+        subjectIds.addAll(checked);
     }
 
     public boolean addSubject(String subjectId) {

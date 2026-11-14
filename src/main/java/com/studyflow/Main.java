@@ -1,24 +1,22 @@
 package com.studyflow;
 
-import com.formdev.flatlaf.FlatDarkLaf;
-import com.formdev.flatlaf.FlatLightLaf;
 import com.studyflow.config.AppConfig;
 import com.studyflow.config.StudyFlowContext;
 import com.studyflow.controller.StudyFlowController;
 import com.studyflow.model.Theme;
 import com.studyflow.view.MainFrame;
-import com.studyflow.view.VerificationPanel;
+import com.studyflow.view.ViewStyle;
 
 import java.awt.GraphicsEnvironment;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.io.IOException;
 import java.nio.file.Path;
+import java.time.Clock;
 import java.util.Arrays;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import javax.swing.JFrame;
 import javax.swing.JOptionPane;
 import javax.swing.SwingUtilities;
 
@@ -77,8 +75,9 @@ public final class Main {
 
     private static void initialize(AppConfig config, ExecutorService worker, CompletableFuture<Void> finished) {
         try {
-            StudyFlowContext context = StudyFlowContext.open(config.dataDirectory());
-            SwingUtilities.invokeLater(() -> openWindow(config, context, worker, finished));
+            Clock clock = Clock.systemDefaultZone();
+            StudyFlowContext context = StudyFlowContext.open(config.dataDirectory(), clock);
+            SwingUtilities.invokeLater(() -> openWindow(config, context, worker, finished, clock));
         } catch (IOException | RuntimeException error) {
             worker.shutdown();
             SwingUtilities.invokeLater(() -> {
@@ -89,18 +88,11 @@ public final class Main {
     }
 
     private static void openWindow(AppConfig config, StudyFlowContext context, ExecutorService worker,
-                                   CompletableFuture<Void> finished) {
+                                   CompletableFuture<Void> finished, Clock clock) {
         try {
-            boolean installed = context.settings().getTheme() == Theme.DARK
-                    ? FlatDarkLaf.setup() : FlatLightLaf.setup();
-            if (!installed) {
-                throw new IllegalStateException("Could not initialize the StudyFlow theme.");
-            }
-            StudyFlowController controller = new StudyFlowController(context.taskManager(), context.subjectManager(),
-                    context.workspaceManager(), context.noteManager(), worker);
-            VerificationPanel panel = new VerificationPanel(controller);
-            MainFrame frame = new MainFrame(config, panel);
-            frame.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
+            Theme theme = context.settings().getTheme();
+            ViewStyle.applyTheme(theme);
+            MainFrame frame = new MainFrame(config, new StudyFlowController(context, worker, clock), theme);
             frame.addWindowListener(new WindowAdapter() {
                 private boolean closing;
 
@@ -108,7 +100,7 @@ public final class Main {
                 public void windowClosing(WindowEvent event) {
                     if (!closing) {
                         closing = true;
-                        panel.setClosing();
+                        frame.setClosing();
                         finish(context, worker, finished, frame::dispose, null);
                     }
                 }

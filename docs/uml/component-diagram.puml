@@ -17,7 +17,7 @@ skinparam databaseBackgroundColor #EDF5FF
 component "Application bootstrap\nMain + StudyFlowContext" as Bootstrap
 
 package "Presentation" {
-  component "Swing views\nFlatLaf" as Views
+  component "MainFrame and sidebar\nDashboard, Tasks, Academic Pages, Settings" as Views
   component "StudyFlowController\nEDT + serial executor" as Controllers
   Views --> Controllers : user actions
 }

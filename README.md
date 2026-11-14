@@ -32,7 +32,12 @@ mvn test
 mvn exec:java '-Dexec.mainClass=com.studyflow.Main'
 ```
 
-The initial desktop interface has tabs for Tasks, Subjects, Workspaces and Notes. Each tab lets you add records and select saved records to see their details. To check persistence, create a subject, then link it from a task, a workspace and a note. Close the window, launch StudyFlow again and select the records to see their saved details. The full management and search operations are available through the Java services and covered by the test suite.
+StudyFlow opens to the Dashboard. It shows live task totals, today's deadlines, the next seven days of deadlines, and Smart Priority. Use **Complete** on a due-today task to update its status and the dashboard counts.
+
+- **My Tasks** supports general tasks, assignments, exams and study sessions. Select a row to view its details or change its priority or status. Use **Apply** to combine search, filters, date bounds and sorting.
+- **Subjects**, **Workspaces** and **Notes** support adding, editing and deleting records. Link a note to a subject or select multiple subjects for a workspace. A subject with linked records must be unlinked before deletion.
+- **Settings** switches between Light and Dark immediately and saves the theme for the next launch.
+- Calendar, Kanban, Study Materials, Attendance, Analytics and the dashboard Focus shortcut show the stage in which each feature becomes available.
 
 ## Local data and recovery
 
@@ -69,3 +74,4 @@ Use `--data-dir` before `--restore` when recovering an alternate profile. Restar
 - [Development log](docs/development-log.md)
 - [Java concept mapping](docs/java-concept-mapping.md)
 - [Stage reports](docs/stage-reports)
+- [Stage 7 GUI and dashboard report](docs/stage-reports/stage-7-report.md)

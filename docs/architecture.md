@@ -7,7 +7,7 @@ StudyFlow is a single-user, local-first Java 21 desktop application. Maven build
 | Package | Responsibility | Dependencies |
 | --- | --- | --- |
 | `com.studyflow` and `config` | Parse launch options, choose the data directory and defaults, assemble the application and manage its lifecycle | Controllers, services, storage implementations, Swing |
-| `view` | Present the initial shell, input forms and result lists. Convert Swing events into controller calls | Controllers, domain types used for display |
+| `view` | Present the dashboard, navigation, task forms and academic record pages. Convert Swing events into controller calls | Controllers, domain types used for display |
 | `controller` | Translate UI input into service commands, schedule I/O off the EDT, report results and errors to the view | Service APIs and domain types |
 | `service` | Validate use cases and relationships, orchestrate updates, assemble search and task views | Domain, repository contracts, factories and strategies |
 | `model`, `interfaces`, `utils` | Model academic records and enforce their intrinsic invariants. Define contracts and shared validation | Java standard library |
@@ -63,7 +63,11 @@ The `--backup` command locks and validates the profile, then copies the selected
 
 ## Extension paths
 
-Stage 7 can replace the verification views while keeping controller-facing service behavior. Stage 8 can query deadlines for a calendar, use existing task status groups for Kanban and route status changes through the task service. Notifications and focus timing can use application services with a managed lifecycle. Stage 9 can key attendance records by subject ID. Stage 10 can add material metadata linked by subject ID and keep file extraction and summarization behind service-owned interfaces. Stage 11 can adapt external clients to these interfaces and keep credentials outside the source and local academic records. A folder model can introduce a common workspace item contract if nested folders need uniform operations. Stage 12 can package the executable and expand end-to-end testing.
+Stage 8 can replace the sidebar's Calendar and Kanban availability views, query deadlines and status groups from the task service, and route changes through the existing controller boundary. Notifications and focus timing can use application services with a managed lifecycle. Stage 9 can key attendance records by subject ID. Stage 10 can add material metadata linked by subject ID and keep file extraction and summarization behind service-owned interfaces. Stage 11 can adapt external clients to these interfaces and keep credentials outside the source and local academic records. A folder model can introduce a common workspace item contract if nested folders need uniform operations. Stage 12 can package the executable and expand end-to-end testing.
+
+## Desktop pages
+
+`MainFrame` hosts a persistent `SidebarPanel` and switches content with Swing's `CardLayout`. `DashboardPanel` renders a controller snapshot that uses the same task queries as the task engine. `TaskPanel` sends combined criteria to the controller and delegates record editing to `TaskFormDialog`. Subjects, workspaces and notes share an academic record panel and dispatch typed commands to their existing managers. The controller serializes commands on the application worker and sends results to the EDT. A successful settings save updates FlatLaf and the visible theme. The next launch loads that preference from the existing settings repository.
 
 ## UML
 

@@ -1,146 +1,327 @@
 package com.studyflow.view;
 
 import com.studyflow.config.AppConfig;
-import java.awt.BasicStroke;
+import com.studyflow.controller.StudyFlowController;
+import com.studyflow.controller.StudyFlowController.TaskQuery;
+import com.studyflow.factory.TaskDraft;
+import com.studyflow.model.Priority;
+import com.studyflow.model.Subject;
+import com.studyflow.model.TaskStatus;
+import com.studyflow.model.Theme;
+import com.studyflow.view.academic.AcademicPanel;
+import com.studyflow.view.dashboard.DashboardPanel;
+import com.studyflow.view.navigation.SidebarPanel;
+import com.studyflow.view.navigation.SidebarPanel.Page;
+import com.studyflow.view.settings.SettingsPanel;
+import com.studyflow.view.tasks.TaskPanel;
+
 import java.awt.BorderLayout;
+import java.awt.CardLayout;
 import java.awt.Color;
 import java.awt.Dimension;
-import java.awt.Font;
-import java.awt.Graphics;
-import java.awt.Graphics2D;
-import java.awt.GridLayout;
-import java.awt.RenderingHints;
-import java.awt.geom.Path2D;
+import java.awt.Rectangle;
+import java.awt.Toolkit;
+import java.util.List;
 import javax.swing.BorderFactory;
 import javax.swing.JButton;
-import javax.swing.JComponent;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
-import javax.swing.SwingConstants;
-import javax.swing.UIManager;
 
-/** Top-level StudyFlow window with navigation and a central workspace. */
+/** Hosts the active desktop page and coordinates shared interaction state. */
 public final class MainFrame extends JFrame {
-    private static final int SIDEBAR_WIDTH = 214;
-    private static final int NAVIGATION_ROW_HEIGHT = 36;
-
-    public MainFrame(AppConfig config) {
-        this(config, new InitialDashboardPanel(), true);
-    }
-
-    public MainFrame(AppConfig config, JComponent content) {
-        this(config, content, false);
-    }
-
-    private MainFrame(AppConfig config, JComponent content, boolean showOverviewNavigation) {
-        super(config.name());
-        setDefaultCloseOperation(DISPOSE_ON_CLOSE);
-        setMinimumSize(new Dimension(740, 480));
-        setSize(1020, 650);
-        setLayout(new BorderLayout());
-        add(createSidebar(config, showOverviewNavigation), BorderLayout.LINE_START);
-        add(content, BorderLayout.CENTER);
-        setLocationRelativeTo(null);
-    }
-
-    private JPanel createSidebar(AppConfig config, boolean showOverviewNavigation) {
-        JPanel sidebar = new JPanel(new BorderLayout(0, 26));
-        sidebar.setPreferredSize(new Dimension(SIDEBAR_WIDTH, 0));
-        sidebar.setBackground(UIManager.getColor("TextField.background"));
-        sidebar.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createMatteBorder(0, 0, 0, 1, UIManager.getColor("Separator.foreground")),
-                BorderFactory.createEmptyBorder(24, 16, 18, 16)));
-        sidebar.add(createBrand(config.name()), BorderLayout.PAGE_START);
-
-        JPanel navigation = new JPanel(new BorderLayout());
-        navigation.setOpaque(false);
-        navigation.add(createNavigation(showOverviewNavigation), BorderLayout.PAGE_START);
-        sidebar.add(navigation, BorderLayout.CENTER);
-
-        JLabel version = new JLabel("Version " + config.version());
-        version.setBorder(BorderFactory.createEmptyBorder(0, 10, 0, 0));
-        version.setFont(version.getFont().deriveFont(12f));
-        sidebar.add(version, BorderLayout.PAGE_END);
-        return sidebar;
-    }
-
-    private JPanel createBrand(String name) {
-        JPanel brand = new JPanel(new BorderLayout(10, 0));
-        brand.setOpaque(false);
-        brand.setBorder(BorderFactory.createEmptyBorder(0, 7, 0, 0));
-        JLabel nameLabel = new JLabel(name);
-        nameLabel.setFont(nameLabel.getFont().deriveFont(Font.BOLD, 19f));
-        brand.add(new AppMark(), BorderLayout.LINE_START);
-        brand.add(nameLabel, BorderLayout.CENTER);
-        return brand;
-    }
-
-    private JPanel createNavigation(boolean showOverviewNavigation) {
-        JPanel navigation = new JPanel(new GridLayout(0, 1, 0, 4));
-        navigation.setOpaque(false);
-        navigation.getAccessibleContext().setAccessibleName("StudyFlow navigation");
-
-        navigation.add(currentPage(showOverviewNavigation ? "Overview" : "Academic workspace"));
-        String[] placeholders = showOverviewNavigation
-                ? new String[]{"Tasks", "Subjects", "Workspaces", "Notes", "Search", "Calendar"}
-                : new String[]{"Search", "Calendar"};
-        for (String title : placeholders) {
-            JButton placeholder = new JButton(title);
-            placeholder.setHorizontalAlignment(SwingConstants.LEADING);
-            placeholder.setBorder(BorderFactory.createEmptyBorder(0, 10, 0, 10));
-            placeholder.setContentAreaFilled(false);
-            placeholder.setEnabled(false);
-            placeholder.getAccessibleContext().setAccessibleDescription("Available in a later stage");
-            navigation.add(placeholder);
+    private final StudyFlowController controller;
+    private final CardLayout pages = new CardLayout();
+    private final JPanel content = new JPanel(pages);
+    private final SidebarPanel sidebar;
+    private final DashboardPanel dashboard;
+    private final TaskPanel tasks;
+    private final AcademicPanel subjects;
+    private final AcademicPanel workspaces;
+    private final AcademicPanel notes;
+    private final SettingsPanel settings;
+    private final JLabel feedback = new JLabel("Loading your workspace…") {
+        @Override
+        public Color getForeground() {
+            return ViewStyle.color(error ? "danger" : "muted");
         }
-        return navigation;
+    };
+
+    private TaskQuery taskQuery = TaskQuery.initial();
+    private List<Subject> taskSubjects = List.of();
+    private Theme theme;
+    private boolean busy;
+    private boolean closing;
+    private boolean error;
+
+    public MainFrame(AppConfig config, StudyFlowController controller, Theme theme) {
+        super(config.name());
+        this.controller = controller;
+        this.theme = theme;
+        setName("studyFlowWindow");
+        setDefaultCloseOperation(DO_NOTHING_ON_CLOSE);
+        setMinimumSize(new Dimension(850, 560));
+        Rectangle screen = getGraphicsConfiguration().getBounds();
+        var screenInsets = Toolkit.getDefaultToolkit().getScreenInsets(getGraphicsConfiguration());
+        setSize(Math.max(850, Math.min(1260, screen.width - screenInsets.left - screenInsets.right - 40)),
+                Math.max(560, Math.min(830, screen.height - screenInsets.top - screenInsets.bottom - 40)));
+        setLocationRelativeTo(null);
+
+        sidebar = new SidebarPanel(config.name(), this::navigate);
+        dashboard = new DashboardPanel(this::dashboardAction, id -> change(
+                () -> controller.changeStatus(id, TaskStatus.COMPLETED), "Task completed.", null));
+        tasks = new TaskPanel(new TaskActions());
+        AcademicActions academicActions = new AcademicActions();
+        subjects = new AcademicPanel(AcademicPanel.Kind.SUBJECTS, academicActions);
+        workspaces = new AcademicPanel(AcademicPanel.Kind.WORKSPACES, academicActions);
+        notes = new AcademicPanel(AcademicPanel.Kind.NOTES, academicActions);
+        settings = new SettingsPanel(this::selectTheme);
+        settings.showTheme(theme);
+
+        content.add(dashboard, Page.DASHBOARD.name());
+        content.add(tasks, Page.TASKS.name());
+        content.add(subjects, Page.SUBJECTS.name());
+        content.add(workspaces, Page.WORKSPACES.name());
+        content.add(notes, Page.NOTES.name());
+        content.add(settings, Page.SETTINGS.name());
+        for (Page page : Page.values()) {
+            if (page.availableStage() > 0) {
+                content.add(availability(page.title(), page.availableStage()), page.name());
+            }
+        }
+        JPanel focus = availability("Focus session", 8);
+        JButton back = new JButton("Back to dashboard");
+        back.addActionListener(event -> navigate(Page.DASHBOARD));
+        JPanel footer = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.LEADING, 0, 0));
+        footer.add(back);
+        focus.add(footer, BorderLayout.PAGE_END);
+        content.add(focus, "FOCUS");
+
+        feedback.setName("workspaceStatus");
+        feedback.putClientProperty("html.disable", Boolean.TRUE);
+        feedback.setBorder(BorderFactory.createEmptyBorder(5, 27, 8, 20));
+        JPanel workspace = new JPanel(new BorderLayout());
+        workspace.add(content, BorderLayout.CENTER);
+        workspace.add(feedback, BorderLayout.PAGE_END);
+        add(sidebar, BorderLayout.LINE_START);
+        add(workspace, BorderLayout.CENTER);
+        navigate(Page.DASHBOARD);
+        setBusy(true);
+        controller.load(taskQuery, records -> {
+            if (!closing) {
+                showRecords(records);
+                setBusy(false);
+                showFeedback(" ", false);
+            }
+        }, this::showFailure);
     }
 
-    private static JLabel currentPage(String title) {
-        JLabel currentPage = new JLabel(title);
-        currentPage.setPreferredSize(new Dimension(0, NAVIGATION_ROW_HEIGHT));
-        currentPage.setBorder(BorderFactory.createEmptyBorder(0, 10, 0, 10));
-        currentPage.setFont(currentPage.getFont().deriveFont(Font.BOLD));
-        currentPage.setBackground(UIManager.getColor("List.selectionBackground"));
-        currentPage.setForeground(UIManager.getColor("List.selectionForeground"));
-        currentPage.setOpaque(true);
-        currentPage.getAccessibleContext().setAccessibleDescription("Current page");
-        return currentPage;
+    private static JPanel availability(String name, int stage) {
+        JPanel page = new JPanel(new BorderLayout(0, 18));
+        page.setBorder(BorderFactory.createEmptyBorder(26, 28, 24, 28));
+        page.add(ViewStyle.heading(name), BorderLayout.PAGE_START);
+        JPanel message = ViewStyle.card(new BorderLayout());
+        message.setBorder(BorderFactory.createEmptyBorder(22, 22, 22, 22));
+        message.add(ViewStyle.subheading("Available in Stage " + stage), BorderLayout.CENTER);
+        JPanel body = new JPanel(new BorderLayout());
+        body.setOpaque(false);
+        body.add(message, BorderLayout.PAGE_START);
+        page.add(body, BorderLayout.CENTER);
+        return page;
     }
 
-    private static final class AppMark extends JComponent {
-        private static final int SIZE = 34;
-        private static final Color BACKGROUND = new Color(72, 63, 149);
+    private void navigate(Page page) {
+        sidebar.showPage(page);
+        pages.show(content, page.name());
+    }
 
-        private AppMark() {
-            setPreferredSize(new Dimension(SIZE, SIZE));
+    private void dashboardAction(DashboardPanel.Action action) {
+        switch (action) {
+            case ADD_TASK -> {
+                navigate(Page.TASKS);
+                tasks.openCreate();
+            }
+            case ADD_SUBJECT -> {
+                navigate(Page.SUBJECTS);
+                subjects.openCreate();
+            }
+            case ADD_NOTE -> {
+                navigate(Page.NOTES);
+                notes.openCreate();
+            }
+            case START_FOCUS -> {
+                sidebar.showPage(Page.DASHBOARD);
+                pages.show(content, "FOCUS");
+            }
+            case OPEN_ATTENDANCE -> navigate(Page.ATTENDANCE);
+        }
+    }
+
+    private void selectTheme(Theme selected) {
+        if (selected != theme) {
+            change(() -> controller.changeTheme(selected), "Theme saved.", null);
+        }
+    }
+
+    private void showRecords(StudyFlowController.Records records) {
+        if (theme != records.theme()) {
+            theme = records.theme();
+            ViewStyle.applyTheme(theme);
+            sidebar.applyColors();
+        }
+        settings.showTheme(theme);
+        dashboard.showData(records.dashboard());
+        tasks.showTasks(records.tasks(), records.subjects());
+        subjects.showRecords(records.subjects(), records.workspaces(), records.notes());
+        workspaces.showRecords(records.subjects(), records.workspaces(), records.notes());
+        notes.showRecords(records.subjects(), records.workspaces(), records.notes());
+        taskSubjects = records.subjects();
+    }
+
+    private void query(TaskQuery query) {
+        if (busy || closing) {
+            return;
+        }
+        setBusy(true);
+        controller.query(query, rows -> {
+            if (!closing) {
+                taskQuery = query;
+                tasks.showTasks(rows, taskSubjects);
+                setBusy(false);
+                showFeedback(" ", false);
+            }
+        }, this::showFailure);
+    }
+
+    private void change(Runnable command, String success, Runnable afterSave) {
+        if (busy || closing) {
+            return;
+        }
+        setBusy(true);
+        showFeedback("Saving…", false);
+        controller.change(command, taskQuery, records -> {
+            if (!closing) {
+                showRecords(records);
+                setBusy(false);
+                if (afterSave != null) {
+                    afterSave.run();
+                }
+                showFeedback(success, false);
+            }
+        }, this::showFailure);
+    }
+
+    private void showFailure(String message) {
+        if (!closing) {
+            settings.showTheme(theme);
+            tasks.failEdit(message);
+            setBusy(false);
+            showFeedback(message, true);
+        }
+    }
+
+    private void showFeedback(String text, boolean failed) {
+        error = failed;
+        feedback.setText(text);
+        feedback.setToolTipText(failed ? text : null);
+        feedback.repaint();
+    }
+
+    private void setBusy(boolean busy) {
+        this.busy = busy;
+        dashboard.setBusy(busy);
+        tasks.setBusy(busy);
+        subjects.setBusy(busy);
+        workspaces.setBusy(busy);
+        notes.setBusy(busy);
+        settings.setBusy(busy);
+    }
+
+    public void setClosing() {
+        closing = true;
+        setBusy(true);
+        showFeedback("Closing…", false);
+    }
+
+    private final class TaskActions implements TaskPanel.Actions {
+        @Override
+        public void create(TaskDraft draft) {
+            change(() -> controller.createTask(draft), "Task added.", tasks::finishEdit);
         }
 
         @Override
-        protected void paintComponent(Graphics graphics) {
-            super.paintComponent(graphics);
-            Graphics2D canvas = (Graphics2D) graphics.create();
-            try {
-                canvas.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                canvas.setColor(BACKGROUND);
-                canvas.fillRoundRect(0, 0, SIZE, SIZE, 12, 12);
-                canvas.setColor(Color.WHITE);
-                canvas.setStroke(new BasicStroke(1.5f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+        public void update(String id, TaskDraft draft) {
+            change(() -> controller.updateTask(id, draft), "Task updated.", tasks::finishEdit);
+        }
 
-                Path2D pages = new Path2D.Double();
-                pages.moveTo(8.5, 10.5);
-                pages.quadTo(13, 9.5, 17, 12.5);
-                pages.quadTo(21, 9.5, 25.5, 10.5);
-                pages.lineTo(25.5, 22.5);
-                pages.quadTo(21, 21.5, 17, 24.5);
-                pages.quadTo(13, 21.5, 8.5, 22.5);
-                pages.closePath();
-                canvas.draw(pages);
-                canvas.drawLine(17, 13, 17, 24);
-            } finally {
-                canvas.dispose();
-            }
+        @Override
+        public void delete(String id) {
+            change(() -> controller.deleteTask(id), "Task deleted.", null);
+        }
+
+        @Override
+        public void status(String id, TaskStatus status) {
+            change(() -> controller.changeStatus(id, status), "Task status updated.", null);
+        }
+
+        @Override
+        public void priority(String id, Priority priority) {
+            change(() -> controller.changePriority(id, priority), "Task priority updated.", null);
+        }
+
+        @Override
+        public void query(TaskQuery query) {
+            MainFrame.this.query(query);
+        }
+    }
+
+    private final class AcademicActions implements AcademicPanel.Actions {
+        @Override
+        public void createSubject(String name, String code, String description, List<String> tags) {
+            change(() -> controller.createSubject(name, code, description, tags), "Subject added.", subjects::finishEdit);
+        }
+
+        @Override
+        public void updateSubject(String id, String name, String code, String description, List<String> tags) {
+            change(() -> controller.updateSubject(id, name, code, description, tags),
+                    "Subject updated.", subjects::finishEdit);
+        }
+
+        @Override
+        public void deleteSubject(String id) {
+            change(() -> controller.deleteSubject(id), "Subject deleted.", null);
+        }
+
+        @Override
+        public void createWorkspace(String name, String description, List<String> members) {
+            change(() -> controller.createWorkspace(name, description, members), "Workspace added.",
+                    workspaces::finishEdit);
+        }
+
+        @Override
+        public void updateWorkspace(String id, String name, String description, List<String> members) {
+            change(() -> controller.updateWorkspace(id, name, description, members), "Workspace updated.",
+                    workspaces::finishEdit);
+        }
+
+        @Override
+        public void deleteWorkspace(String id) {
+            change(() -> controller.deleteWorkspace(id), "Workspace deleted.", null);
+        }
+
+        @Override
+        public void createNote(String title, String body, String subjectId, List<String> tags) {
+            change(() -> controller.createNote(title, body, subjectId, tags), "Note added.", notes::finishEdit);
+        }
+
+        @Override
+        public void updateNote(String id, String title, String body, String subjectId, List<String> tags) {
+            change(() -> controller.updateNote(id, title, body, subjectId, tags), "Note updated.", notes::finishEdit);
+        }
+
+        @Override
+        public void deleteNote(String id) {
+            change(() -> controller.deleteNote(id), "Note deleted.", null);
         }
     }
 }

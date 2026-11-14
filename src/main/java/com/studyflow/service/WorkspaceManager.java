@@ -46,6 +46,16 @@ public final class WorkspaceManager {
         });
     }
 
+    /** Saves details and membership together after validating the selected subjects. */
+    public Workspace update(String id, String name, String description, List<String> subjectIds) {
+        return workspaces.edit(id, "Workspace", workspace -> {
+            workspace.setName(name);
+            workspace.setDescription(description);
+            workspace.setSubjectIds(subjectIds);
+            workspace.getSubjectIds().forEach(this::requireSubject);
+        });
+    }
+
     public Optional<Workspace> findById(String id) {
         return workspaces.findById(id);
     }

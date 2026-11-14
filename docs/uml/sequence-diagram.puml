@@ -17,7 +17,7 @@ hide footbox
 autonumber
 
 actor Student
-boundary "VerificationPanel task form" as View
+boundary TaskFormDialog as View
 control StudyFlowController as Controller
 control TaskManager as Manager
 participant TaskFactory as Factory
@@ -26,8 +26,8 @@ participant FileStorage as Storage
 database "tasks.json + backups" as Disk
 
 Student -> View : Submit task input
-View -> Controller : createTask(title, subjectId, date, priority)
-Controller ->> Manager : quickAdd(...) via serial executor
+View -> Controller : submit TaskDraft via MainFrame
+Controller ->> Manager : create(draft) via serial executor
 Manager -> Manager : Apply defaults and validate\nfields and subject reference
 alt Invalid input
   Manager -->> Controller : Validation error

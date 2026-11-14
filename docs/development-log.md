@@ -38,3 +38,8 @@
 
 - Audited the existing persistence and verified the 62-test baseline. Added a manual backup command using the existing profile lock, typed repository checks and atomic file writing.
 - Passed 71 tests, verified command-line backup and recovery with a spaced directory path, and repeated the two-process Swing restart check. Updated the requirements, architecture, use-case diagram and Stage 6 report.
+
+### 14 November · Stage 7
+
+- Built the main dashboard, task management, academic pages, navigation and persistent theme settings. Fixed academic create forms and verified responsive layouts.
+- Passed 75 tests and a two-process Windows Swing smoke check. Updated the README, requirements, architecture and UML.

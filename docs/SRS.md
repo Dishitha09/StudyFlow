@@ -10,7 +10,7 @@ University students often track deadlines, coursework, study notes, and subject 
 
 ## Scope and constraints
 
-Stages 1–6 deliver the system design, a Maven desktop application, an independently testable domain and task engine, academic organization and search, and persistent local data. The Swing shell provides a light theme, basic sidebar and content area, and enough controls to create and view a task, subject, workspace, and note and verify their recovery after restart. The roadmap specifies the full interface and subsequent modules.
+Stages 1–7 deliver the system design, a Maven desktop application, an independently testable domain and task engine, academic organization and search services, persistent local data, and the main Swing interface. The roadmap lists the subsequent productivity and academic modules.
 
 Use Java 21, Swing and AWT, FlatLaf, Java Time, Java collections, Maven, Jackson Databind, local JSON, JUnit Jupiter, and Git. Use Java threads and `ExecutorService` when background work is needed. Use Maven's standard source and test layout, Java release 21, UTF-8, and compiler, Surefire, and Exec plugins with compatible versions. VS Code and IntelliJ IDEA are supported development options. The required terminal commands are `mvn clean compile`, `mvn test`, and `mvn exec:java -Dexec.mainClass="com.studyflow.Main"`.
 
@@ -90,6 +90,15 @@ Task register listings, search, filters, date views and Kanban grouping return r
 | DATA-05 | 6 | Maintain timestamped local backups under `data/backups/`, preserving prior valid data and avoiding replacement of the only valid copy. Provide a manual command to back up the current saved file for a selected record type after validating the profile. Report an error if the selected file is missing. Provide a documented per-file restore workflow that validates the proposed profile before replacing the live file. Invalid or corrupt data shall remain available for recovery or diagnosis. |
 | DATA-06 | 6 | From the initial desktop shell, a student shall be able to create a task, subject, workspace, and note, close StudyFlow, and see the same records after restart. Include a restart acceptance check in addition to repository and service tests. |
 
+### Desktop interface
+
+| ID | Stage | Requirement |
+|---|---|---|
+| UI-01 | 7 | Open the main dashboard with persistent sidebar navigation and an active-page indicator. Keep core pages usable on resize and identify the availability of future modules. |
+| UI-02 | 7 | Show the current date, task summary, five data-backed statistics, due-today tasks with a completion action, upcoming deadlines and Smart Priority. Provide shortcuts to add a task, subject or note and access the Focus and Attendance availability pages. |
+| UI-03 | 7 | Create, edit and delete tasks, inspect details, change status and priority, and apply search, sorting and combined subject, priority, status, type, overdue and date filters. Support subtype metadata and show validation errors while preserving inputs for correction. |
+| UI-04 | 7 | Manage subjects, workspaces and notes through their own pages. Switch between Light and Dark and restore the saved theme at startup. |
+
 ## Non-functional requirements
 
 | ID | Quality | Requirement and verification |
@@ -115,6 +124,7 @@ Task register listings, search, filters, date views and Kanban grouping return r
 | 4 | Run task-engine tests for CRUD, quick-add and defaults, status changes, duplicate IDs, invalid inputs, search, all sorting modes, combined filters, date boundaries, smart ranking, Kanban grouping, each recurrence interval, and subtask operations. The tests shall run independently of Swing. |
 | 5 | Run service tests for subject and workspace CRUD and membership, task assignment and counts, note CRUD and timestamps, case-insensitive partial and multiword search, invalid IDs, and safe deletion policies. |
 | 6 | Run repository tests for CRUD and reopen, all persistent entity types, missing and empty files, invalid JSON, dates and enums, backup creation and restore, and reference integrity. Run the desktop restart acceptance check in DATA-06. |
+| 7 | Verify dashboard values and completion, sidebar navigation, task CRUD and queries, record links and edits, light and dark themes, window resizing and persistence on restart. |
 
 Each stage shall preserve previous behavior, record executed verification and outcomes in `docs/stage-reports/stage-N.md`, update the development log, and create a Git checkpoint. The project shall maintain `docs/java-concept-mapping.md` with syllabus concept locations, rationale, and viva explanations. Separate educational examples may demonstrate techniques unsuitable for production, with later-stage coverage identified explicitly.
 
@@ -122,8 +132,7 @@ Each stage shall preserve previous behavior, record executed verification and ou
 
 | Stage | Planned requirements |
 |---|---|
-| 7 — Full GUI | Complete dashboard, sidebar navigation, task management and quick-add dialogs, workspace and notes screens, global search interface, theme settings, and polished FlatLaf styling. |
-| 8 — Productivity | Monthly calendar, drag-and-drop Kanban, notifications, focus sessions, and productivity analytics. |
+| 8 — Productivity | Monthly calendar, drag-and-drop Kanban, notifications, focus sessions, global search interface, task recurrence and subtask controls, and productivity analytics. |
 | 9 — Attendance | Subject-wise attendance, percentage, target, maximum classes that can be missed, and classes required to reach a target. |
 | 10 — Materials and AI | Subject-wise study material library, document and PDF uploads, PDF text extraction, topic-based document retrieval, AI summaries and study assistance, and generated revision questions. |
 | 11 — Integrations | Google Calendar synchronization with OAuth, optional Spotify access, and an external LLM provider. Credentials and client integration belong to this stage. |
