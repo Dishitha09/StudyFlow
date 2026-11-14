@@ -56,3 +56,7 @@
 ### 14 November · Stage 10
 
 - Added managed PDF imports, a page-numbered text cache, source-linked search and local study aids. The full suite passed 101 tests.
+
+### 14 November · Stage 11
+
+- Added optional Google Calendar sync, offline iCalendar export, Spotify shortcuts, OpenAI transport and local analytics. Passed 129 tests using offline fixtures and simulated transport.

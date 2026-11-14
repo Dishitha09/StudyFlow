@@ -121,6 +121,35 @@ public final class StudyFlowController {
         }, success, failure);
     }
 
+    public void connectGoogle() { integration(() -> context.integrations().google().connect()); }
+    public void disconnectGoogle() { context.integrations().google().disconnect(); }
+    public void testGoogle() { integration(() -> context.integrations().google().calendarId()); }
+    public void syncGoogle(List<String> ids) { integration(() -> context.integrations().sync(selected(ids))); }
+    public void removeEvent(String id) { integration(() -> context.integrations().deleteEvent(id)); }
+    public void exportCalendar(Path path, List<String> ids) {
+        integration(() -> context.integrations().export(path, selected(ids)));
+    }
+    public void addPlaylist(String url) { context.integrations().addPlaylist(url); }
+    public void removePlaylist(String url) { context.integrations().removePlaylist(url); }
+    public void openPlaylist(String url) { integration(() -> context.integrations().openPlaylist(url)); }
+    public void testAi() { integration(() -> context.aiProvider().testConnection()); }
+
+    private List<Task> selected(List<String> ids) {
+        Set<String> selection = Set.copyOf(ids);
+        return context.taskManager().findAll().stream().filter(task -> selection.contains(task.getId())).toList();
+    }
+
+    private static void integration(LocalOperation action) {
+        try {
+            action.run();
+        } catch (IOException error) {
+            throw new UncheckedIOException(error.getMessage(), error);
+        }
+    }
+
+    @FunctionalInterface
+    private interface LocalOperation { void run() throws IOException; }
+
     public void reminders(Consumer<List<String>> success, Consumer<String> failure) {
         submit(() -> reminders.collect(context.taskManager().findAll(), LocalDate.now(clock),
                 context.settings().isNotificationsEnabled()), success, failure);
@@ -277,7 +306,9 @@ public final class StudyFlowController {
         return new Records(dashboard, taskRows(query), subjects, context.workspaceManager().findAll(),
                 context.noteManager().findAll(), settings.getTheme(), all, settings,
                 context.focusRepository().load().size(), context.attendanceService().snapshot(),
-                context.materialLibrary().findAll(), context.studyAssistant().remoteAvailable());
+                context.materialLibrary().findAll(), context.studyAssistant().remoteAvailable(),
+                context.integrations().google().configured(), context.integrations().google().connected(),
+                context.integrations().playlists());
     }
 
     private List<Task> taskRows(TaskQuery query) {
@@ -332,7 +363,8 @@ public final class StudyFlowController {
     public record Records(DashboardData dashboard, List<Task> tasks, List<Subject> subjects,
                           List<Workspace> workspaces, List<Note> notes, Theme theme, List<Task> allTasks,
                           UserSettings settings, int completedSessions, AttendanceService.Snapshot attendance,
-                          List<StudyMaterial> materials, boolean remoteAi) { }
+                          List<StudyMaterial> materials, boolean remoteAi, boolean googleConfigured,
+                          boolean googleConnected, List<String> playlists) { }
 
     public record SearchData(com.studyflow.service.SearchService.SearchResults records,
                              List<StudyMaterial> materials) { }

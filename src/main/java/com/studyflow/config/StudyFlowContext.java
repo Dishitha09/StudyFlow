@@ -11,6 +11,10 @@ import com.studyflow.repository.AttendanceRepository;
 import com.studyflow.repository.AttendanceTargetRepository;
 import com.studyflow.repository.FocusRepository;
 import com.studyflow.repository.MaterialRepository;
+import com.studyflow.repository.IntegrationRepository;
+import com.studyflow.integrations.GoogleCalendar;
+import com.studyflow.integrations.LocalIntegrations;
+import com.studyflow.integrations.OpenAiProvider;
 import com.studyflow.repository.MemoryStorage;
 import com.studyflow.repository.NoteRepository;
 import com.studyflow.repository.SettingsRepository;
@@ -49,6 +53,8 @@ public final class StudyFlowContext implements AutoCloseable {
     private final AttendanceService attendanceService;
     private final MaterialLibrary materialLibrary;
     private final StudyAssistant studyAssistant;
+    private final LocalIntegrations integrations;
+    private final OpenAiProvider aiProvider;
     private UserSettings settings;
 
     private StudyFlowContext(DataDirectoryLock lock, FileStorage storage, Clock clock) {
@@ -60,7 +66,9 @@ public final class StudyFlowContext implements AutoCloseable {
         settings = settingsRepository.load();
         materialLibrary = new MaterialLibrary(directory.resolve("materials"), new MaterialRepository(storage),
                 repositories.subjects()::existsById, clock);
-        studyAssistant = new StudyAssistant(materialLibrary, null);
+        aiProvider = OpenAiProvider.fromEnvironment();
+        studyAssistant = new StudyAssistant(materialLibrary, aiProvider);
+        integrations = new LocalIntegrations(new IntegrationRepository(storage), new GoogleCalendar(), clock);
         attendanceService = new AttendanceService(new AttendanceRepository(storage),
                 new AttendanceTargetRepository(storage), repositories.subjects()::load,
                 () -> settings().getDefaultAttendanceTarget());
@@ -215,6 +223,10 @@ public final class StudyFlowContext implements AutoCloseable {
     public StudyAssistant studyAssistant() {
         return studyAssistant;
     }
+
+    public LocalIntegrations integrations() { return integrations; }
+
+    public OpenAiProvider aiProvider() { return aiProvider; }
 
     public synchronized UserSettings settings() {
         return settings.copy();

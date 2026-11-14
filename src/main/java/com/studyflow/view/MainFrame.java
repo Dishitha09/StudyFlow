@@ -20,6 +20,7 @@ import com.studyflow.view.planning.KanbanPanel;
 import com.studyflow.view.planning.SearchPanel;
 import com.studyflow.view.planning.SubtaskDialog;
 import com.studyflow.view.settings.SettingsPanel;
+import com.studyflow.view.settings.IntegrationsPanel;
 import com.studyflow.view.tasks.TaskPanel;
 
 import java.awt.BorderLayout;
@@ -47,6 +48,7 @@ public final class MainFrame extends JFrame {
     private final AcademicPanel workspaces;
     private final AcademicPanel notes;
     private final SettingsPanel settings;
+    private final IntegrationsPanel integrations;
     private final CalendarPanel calendar;
     private final KanbanPanel kanban;
     private final FocusPanel focus;
@@ -56,6 +58,7 @@ public final class MainFrame extends JFrame {
     private final javax.swing.Timer reminderTimer;
     private final javax.swing.JTextArea reminderText = new javax.swing.JTextArea(9, 48);
     private final JButton reminderButton = new JButton("Reminders");
+    private final javax.swing.JTextArea analytics = new javax.swing.JTextArea();
     private final JLabel feedback = new JLabel("Loading your workspace…") {
         @Override
         public Color getForeground() {
@@ -94,8 +97,9 @@ public final class MainFrame extends JFrame {
         subjects = new AcademicPanel(AcademicPanel.Kind.SUBJECTS, academicActions);
         workspaces = new AcademicPanel(AcademicPanel.Kind.WORKSPACES, academicActions);
         notes = new AcademicPanel(AcademicPanel.Kind.NOTES, academicActions);
+        integrations = new IntegrationsPanel(new IntegrationActions());
         settings = new SettingsPanel(this::selectTheme, enabled -> change(
-                () -> controller.changeNotifications(enabled), "Reminder preference saved.", null));
+                () -> controller.changeNotifications(enabled), "Reminder preference saved.", null), integrations);
         settings.showTheme(theme);
         calendar = new CalendarPanel(this::openTask);
         kanban = new KanbanPanel((id, status) -> change(() -> controller.changeStatus(id, status),
@@ -174,6 +178,14 @@ public final class MainFrame extends JFrame {
         content.add(search, Page.SEARCH.name());
         content.add(attendance, Page.ATTENDANCE.name());
         content.add(materials, Page.MATERIALS.name());
+        JPanel analyticsPage = new JPanel(new BorderLayout(0, 18));
+        analyticsPage.setBorder(BorderFactory.createEmptyBorder(26, 28, 24, 28));
+        analyticsPage.add(ViewStyle.heading("Analytics"), BorderLayout.PAGE_START);
+        analytics.setName("analyticsTotals");
+        analytics.setEditable(false);
+        analytics.setBorder(BorderFactory.createEmptyBorder(16, 16, 16, 16));
+        analyticsPage.add(ViewStyle.scroll(analytics), BorderLayout.CENTER);
+        content.add(analyticsPage, Page.ANALYTICS.name());
         for (Page page : Page.values()) {
             if (page.availableStage() > 0) {
                 content.add(availability(page.title(), page.availableStage()), page.name());
@@ -277,6 +289,14 @@ public final class MainFrame extends JFrame {
         attendance.showData(records.attendance());
         materials.showData(records.materials(), taskSubjects);
         materials.setRemoteAvailable(records.remoteAi());
+        integrations.showData(records.allTasks(), records.googleConfigured(), records.googleConnected(),
+                records.remoteAi(), records.playlists());
+        var summary = records.dashboard();
+        analytics.setText("Tasks completed    " + summary.completed() + " / " + summary.total()
+                + "\nTasks pending       " + summary.pending()
+                + "\nTasks overdue       " + summary.overdue()
+                + "\nFocus sessions      " + records.completedSessions()
+                + "\nClasses attended   " + records.attendance().attended() + " / " + records.attendance().total());
     }
 
     private void query(TaskQuery query) {
@@ -348,6 +368,7 @@ public final class MainFrame extends JFrame {
         search.setBusy(busy);
         attendance.setBusy(busy);
         materials.setBusy(busy);
+        integrations.setBusy(busy);
     }
 
     public void setClosing() {
@@ -431,6 +452,31 @@ public final class MainFrame extends JFrame {
             case SubtaskDialog.Remove remove -> () -> controller.removeSubtask(task.getId(), remove.id());
         };
         change(command, "Task planning updated.", null);
+    }
+
+    private final class IntegrationActions implements IntegrationsPanel.Actions {
+        @Override public void connect() { change(controller::connectGoogle, "Google Calendar connected.", null); }
+        @Override public void disconnect() { change(controller::disconnectGoogle, "Google Calendar disconnected.", null); }
+        @Override public void testGoogle() { change(controller::testGoogle, "Google Calendar connection verified.", null); }
+        @Override public void sync(List<String> ids) {
+            change(() -> controller.syncGoogle(ids), "Selected deadlines synced.", null);
+        }
+        @Override public void removeEvent(String id) {
+            change(() -> controller.removeEvent(id), "Calendar event removed.", null);
+        }
+        @Override public void export(java.nio.file.Path path, List<String> ids) {
+            change(() -> controller.exportCalendar(path, ids), "Calendar file exported.", null);
+        }
+        @Override public void addPlaylist(String url) {
+            change(() -> controller.addPlaylist(url), "Spotify link saved.", null);
+        }
+        @Override public void removePlaylist(String url) {
+            change(() -> controller.removePlaylist(url), "Spotify link removed.", null);
+        }
+        @Override public void openPlaylist(String url) {
+            change(() -> controller.openPlaylist(url), "Spotify link opened.", null);
+        }
+        @Override public void testAi() { change(controller::testAi, "AI configuration verified.", null); }
     }
 
     private final class TaskActions implements TaskPanel.Actions {

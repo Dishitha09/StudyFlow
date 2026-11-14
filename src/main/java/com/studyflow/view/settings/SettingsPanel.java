@@ -18,7 +18,8 @@ public final class SettingsPanel extends JPanel {
     private final JRadioButton dark = new JRadioButton("Dark");
     private final JCheckBox notifications = new JCheckBox("Show task reminders");
 
-    public SettingsPanel(Consumer<Theme> changeTheme, Consumer<Boolean> changeNotifications) {
+    public SettingsPanel(Consumer<Theme> changeTheme, Consumer<Boolean> changeNotifications,
+                         IntegrationsPanel integrations) {
         super(new BorderLayout(0, 20));
         setBorder(BorderFactory.createEmptyBorder(26, 28, 24, 28));
         add(ViewStyle.heading("Settings"), BorderLayout.PAGE_START);
@@ -53,7 +54,12 @@ public final class SettingsPanel extends JPanel {
 
         JPanel body = new JPanel(new BorderLayout());
         body.setOpaque(false);
-        body.add(card, BorderLayout.PAGE_START);
+        javax.swing.JTabbedPane tabs = new javax.swing.JTabbedPane();
+        JPanel appearance = new JPanel(new BorderLayout());
+        appearance.add(card, BorderLayout.PAGE_START);
+        tabs.addTab("Appearance", appearance);
+        tabs.addTab("Integrations", integrations);
+        body.add(tabs, BorderLayout.CENTER);
         add(body, BorderLayout.CENTER);
     }
 
