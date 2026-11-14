@@ -10,6 +10,7 @@ import com.studyflow.repository.FileStorage;
 import com.studyflow.repository.AttendanceRepository;
 import com.studyflow.repository.AttendanceTargetRepository;
 import com.studyflow.repository.FocusRepository;
+import com.studyflow.repository.MaterialRepository;
 import com.studyflow.repository.MemoryStorage;
 import com.studyflow.repository.NoteRepository;
 import com.studyflow.repository.SettingsRepository;
@@ -18,6 +19,8 @@ import com.studyflow.repository.TaskRepository;
 import com.studyflow.repository.WorkspaceRepository;
 import com.studyflow.service.NoteManager;
 import com.studyflow.service.AttendanceService;
+import com.studyflow.service.MaterialLibrary;
+import com.studyflow.service.StudyAssistant;
 import com.studyflow.service.SearchService;
 import com.studyflow.service.SubjectManager;
 import com.studyflow.service.TaskManager;
@@ -44,6 +47,8 @@ public final class StudyFlowContext implements AutoCloseable {
     private final SearchService searchService;
     private final FocusRepository focusRepository;
     private final AttendanceService attendanceService;
+    private final MaterialLibrary materialLibrary;
+    private final StudyAssistant studyAssistant;
     private UserSettings settings;
 
     private StudyFlowContext(DataDirectoryLock lock, FileStorage storage, Clock clock) {
@@ -53,6 +58,9 @@ public final class StudyFlowContext implements AutoCloseable {
         ProfileRepositories repositories = new ProfileRepositories(storage);
         settingsRepository = repositories.settings();
         settings = settingsRepository.load();
+        materialLibrary = new MaterialLibrary(directory.resolve("materials"), new MaterialRepository(storage),
+                repositories.subjects()::existsById, clock);
+        studyAssistant = new StudyAssistant(materialLibrary, null);
         attendanceService = new AttendanceService(new AttendanceRepository(storage),
                 new AttendanceTargetRepository(storage), repositories.subjects()::load,
                 () -> settings().getDefaultAttendanceTarget());
@@ -61,7 +69,8 @@ public final class StudyFlowContext implements AutoCloseable {
                 () -> new TaskManager(clock, () -> settings().getDefaultPriority(), subjects, repositories.tasks()));
         subjectManager = validate(directory, "subjects/subjects.json",
                 () -> new SubjectManager(repositories.subjects(), taskManager,
-                        repositories.notes()::load, repositories.workspaces()::load, attendanceService::references));
+                        repositories.notes()::load, repositories.workspaces()::load,
+                        id -> attendanceService.references(id) || materialLibrary.references(id)));
         workspaceManager = validate(directory, "workspaces/workspaces.json",
                 () -> new WorkspaceManager(repositories.workspaces(), subjects, clock));
         noteManager = validate(directory, "notes/notes.json",
@@ -197,6 +206,14 @@ public final class StudyFlowContext implements AutoCloseable {
 
     public AttendanceService attendanceService() {
         return attendanceService;
+    }
+
+    public MaterialLibrary materialLibrary() {
+        return materialLibrary;
+    }
+
+    public StudyAssistant studyAssistant() {
+        return studyAssistant;
     }
 
     public synchronized UserSettings settings() {

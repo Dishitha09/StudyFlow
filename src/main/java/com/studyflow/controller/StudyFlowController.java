@@ -8,6 +8,7 @@ import com.studyflow.model.FocusRecord;
 import com.studyflow.model.Note;
 import com.studyflow.model.Priority;
 import com.studyflow.model.StudySession;
+import com.studyflow.model.StudyMaterial;
 import com.studyflow.model.Subject;
 import com.studyflow.model.Task;
 import com.studyflow.model.TaskStatus;
@@ -19,6 +20,7 @@ import com.studyflow.service.TaskFilter;
 import com.studyflow.service.AttendanceService;
 import com.studyflow.service.TaskManager;
 import com.studyflow.service.ReminderService;
+import com.studyflow.service.StudyAssistant;
 import com.studyflow.strategy.SortByCreationDate;
 import com.studyflow.strategy.SortByDeadline;
 import com.studyflow.strategy.SortByPriority;
@@ -29,6 +31,9 @@ import com.studyflow.utils.ValidationUtils;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDate;
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.file.Path;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -62,6 +67,58 @@ public final class StudyFlowController {
     public void search(String text, Consumer<com.studyflow.service.SearchService.SearchResults> success,
                        Consumer<String> failure) {
         submit(() -> context.searchService().search(text), success, failure);
+    }
+
+    public void searchMaterials(String text, Consumer<List<StudyMaterial>> success, Consumer<String> failure) {
+        submit(() -> context.materialLibrary().search(text), success, failure);
+    }
+
+    public void searchAll(String text, Consumer<SearchData> success, Consumer<String> failure) {
+        submit(() -> new SearchData(context.searchService().search(text), text.isBlank() ? List.of()
+                : context.materialLibrary().search(text)), success, failure);
+    }
+
+    public void study(String text, String id, StudyAssistant.Mode mode, boolean remote,
+                      Consumer<StudyAssistant.Answer> success, Consumer<String> failure) {
+        submit(() -> {
+            try {
+                return context.studyAssistant().study(text, id, mode, remote);
+            } catch (IOException error) {
+                throw new UncheckedIOException(error.getMessage(), error);
+            }
+        }, success, failure);
+    }
+
+    public void uploadMaterial(Path source, String title, String description, String subjectId) {
+        try {
+            context.materialLibrary().upload(source, title, description, subjectId);
+        } catch (IOException error) {
+            throw new UncheckedIOException(error.getMessage(), error);
+        }
+    }
+
+    public void deleteMaterial(String id) {
+        try {
+            context.materialLibrary().delete(id);
+        } catch (IOException error) {
+            throw new UncheckedIOException(error.getMessage(), error);
+        }
+    }
+
+    public void openMaterial(String id, Consumer<Path> success, Consumer<String> failure) {
+        submit(() -> {
+            try {
+                Path path = context.materialLibrary().openPath(id);
+                if (!java.awt.Desktop.isDesktopSupported()
+                        || !java.awt.Desktop.getDesktop().isSupported(java.awt.Desktop.Action.OPEN)) {
+                    throw new IOException("Open this PDF in a local viewer: " + path);
+                }
+                java.awt.Desktop.getDesktop().open(path.toFile());
+                return path;
+            } catch (IOException error) {
+                throw new UncheckedIOException(error.getMessage(), error);
+            }
+        }, success, failure);
     }
 
     public void reminders(Consumer<List<String>> success, Consumer<String> failure) {
@@ -219,7 +276,8 @@ public final class StudyFlowController {
         UserSettings settings = context.settings();
         return new Records(dashboard, taskRows(query), subjects, context.workspaceManager().findAll(),
                 context.noteManager().findAll(), settings.getTheme(), all, settings,
-                context.focusRepository().load().size(), context.attendanceService().snapshot());
+                context.focusRepository().load().size(), context.attendanceService().snapshot(),
+                context.materialLibrary().findAll(), context.studyAssistant().remoteAvailable());
     }
 
     private List<Task> taskRows(TaskQuery query) {
@@ -273,5 +331,9 @@ public final class StudyFlowController {
 
     public record Records(DashboardData dashboard, List<Task> tasks, List<Subject> subjects,
                           List<Workspace> workspaces, List<Note> notes, Theme theme, List<Task> allTasks,
-                          UserSettings settings, int completedSessions, AttendanceService.Snapshot attendance) { }
+                          UserSettings settings, int completedSessions, AttendanceService.Snapshot attendance,
+                          List<StudyMaterial> materials, boolean remoteAi) { }
+
+    public record SearchData(com.studyflow.service.SearchService.SearchResults records,
+                             List<StudyMaterial> materials) { }
 }

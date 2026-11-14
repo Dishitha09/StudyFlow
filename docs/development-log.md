@@ -52,3 +52,7 @@
 ### 14 November · Stage 9
 
 - Added subject attendance, correction history, custom targets and exact projections. Fixed target JSON serialization during integration and passed 97 tests.
+
+### 14 November · Stage 10
+
+- Added managed PDF imports, a page-numbered text cache, source-linked search and local study aids. The full suite passed 101 tests.

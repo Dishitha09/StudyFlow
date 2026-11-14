@@ -11,6 +11,7 @@ import com.studyflow.model.Theme;
 import com.studyflow.view.academic.AcademicPanel;
 import com.studyflow.view.attendance.AttendancePanel;
 import com.studyflow.view.dashboard.DashboardPanel;
+import com.studyflow.view.materials.MaterialPanel;
 import com.studyflow.view.navigation.SidebarPanel;
 import com.studyflow.view.navigation.SidebarPanel.Page;
 import com.studyflow.view.planning.CalendarPanel;
@@ -51,6 +52,7 @@ public final class MainFrame extends JFrame {
     private final FocusPanel focus;
     private final SearchPanel search;
     private final AttendancePanel attendance;
+    private final MaterialPanel materials;
     private final javax.swing.Timer reminderTimer;
     private final javax.swing.JTextArea reminderText = new javax.swing.JTextArea(9, 48);
     private final JButton reminderButton = new JButton("Reminders");
@@ -118,6 +120,47 @@ public final class MainFrame extends JFrame {
                 change(() -> controller.setAttendanceTarget(subjectId, target), "Target saved.", null);
             }
         });
+        materials = new MaterialPanel(new MaterialPanel.Actions() {
+            @Override
+            public void upload(java.nio.file.Path source, String title, String description, String subjectId) {
+                change(() -> controller.uploadMaterial(source, title, description, subjectId), "PDF added.", null);
+            }
+
+            @Override
+            public void search(String text) {
+                setBusy(true);
+                controller.searchMaterials(text, results -> {
+                    if (!closing) {
+                        materials.showMatches(results);
+                        setBusy(false);
+                    }
+                }, MainFrame.this::showFailure);
+            }
+
+            @Override
+            public void open(String id) {
+                controller.openMaterial(id, path -> { if (!closing) showFeedback("PDF opened.", false); },
+                        MainFrame.this::showFailure);
+            }
+
+            @Override
+            public void delete(String id) {
+                change(() -> controller.deleteMaterial(id), "PDF removed.", null);
+            }
+
+            @Override
+            public void study(String text, String id, com.studyflow.service.StudyAssistant.Mode mode, boolean remote) {
+                setBusy(true);
+                showFeedback("Preparing study aid…", false);
+                controller.study(text, id, mode, remote, answer -> {
+                    if (!closing) {
+                        materials.showAnswer(answer);
+                        setBusy(false);
+                        showFeedback(" ", false);
+                    }
+                }, MainFrame.this::showFailure);
+            }
+        });
 
         content.add(dashboard, Page.DASHBOARD.name());
         content.add(tasks, Page.TASKS.name());
@@ -130,6 +173,7 @@ public final class MainFrame extends JFrame {
         content.add(focus, Page.FOCUS.name());
         content.add(search, Page.SEARCH.name());
         content.add(attendance, Page.ATTENDANCE.name());
+        content.add(materials, Page.MATERIALS.name());
         for (Page page : Page.values()) {
             if (page.availableStage() > 0) {
                 content.add(availability(page.title(), page.availableStage()), page.name());
@@ -231,6 +275,8 @@ public final class MainFrame extends JFrame {
         kanban.showTasks(records.allTasks(), taskSubjects);
         focus.showData(records.allTasks(), taskSubjects, records.settings(), records.completedSessions());
         attendance.showData(records.attendance());
+        materials.showData(records.materials(), taskSubjects);
+        materials.setRemoteAvailable(records.remoteAi());
     }
 
     private void query(TaskQuery query) {
@@ -301,6 +347,7 @@ public final class MainFrame extends JFrame {
         focus.setBusy(busy);
         search.setBusy(busy);
         attendance.setBusy(busy);
+        materials.setBusy(busy);
     }
 
     public void setClosing() {
@@ -342,6 +389,7 @@ public final class MainFrame extends JFrame {
             case "Subject" -> { navigate(Page.SUBJECTS); subjects.selectRecord(result.id()); }
             case "Workspace" -> { navigate(Page.WORKSPACES); workspaces.selectRecord(result.id()); }
             case "Note" -> { navigate(Page.NOTES); notes.selectRecord(result.id()); }
+            case "Material" -> { navigate(Page.MATERIALS); materials.selectMaterial(result.id()); }
             default -> throw new IllegalArgumentException("Unknown search result: " + result.type());
         }
     }
@@ -351,8 +399,9 @@ public final class MainFrame extends JFrame {
             return;
         }
         setBusy(true);
-        controller.search(query, results -> {
+        controller.searchAll(query, data -> {
             if (!closing) {
+                var results = data.records();
                 List<SearchPanel.Result> rows = new java.util.ArrayList<>();
                 results.tasks().forEach(task -> rows.add(new SearchPanel.Result("Task", task.getId(), task.getTitle(),
                         task.getDescription())));
@@ -362,6 +411,8 @@ public final class MainFrame extends JFrame {
                         item.getName(), item.getDescription())));
                 results.notes().forEach(item -> rows.add(new SearchPanel.Result("Note", item.getId(), item.getTitle(),
                         item.getContent().lines().findFirst().orElse(""))));
+                data.materials().forEach(item -> rows.add(new SearchPanel.Result("Material", item.id(), item.title(),
+                        item.fileName())));
                 search.showResults(rows);
                 setBusy(false);
             }
