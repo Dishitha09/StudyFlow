@@ -7,6 +7,8 @@ import com.studyflow.model.Task;
 import com.studyflow.model.UserSettings;
 import com.studyflow.model.Workspace;
 import com.studyflow.repository.FileStorage;
+import com.studyflow.repository.AttendanceRepository;
+import com.studyflow.repository.AttendanceTargetRepository;
 import com.studyflow.repository.FocusRepository;
 import com.studyflow.repository.MemoryStorage;
 import com.studyflow.repository.NoteRepository;
@@ -15,6 +17,7 @@ import com.studyflow.repository.SubjectRepository;
 import com.studyflow.repository.TaskRepository;
 import com.studyflow.repository.WorkspaceRepository;
 import com.studyflow.service.NoteManager;
+import com.studyflow.service.AttendanceService;
 import com.studyflow.service.SearchService;
 import com.studyflow.service.SubjectManager;
 import com.studyflow.service.TaskManager;
@@ -40,6 +43,7 @@ public final class StudyFlowContext implements AutoCloseable {
     private final NoteManager noteManager;
     private final SearchService searchService;
     private final FocusRepository focusRepository;
+    private final AttendanceService attendanceService;
     private UserSettings settings;
 
     private StudyFlowContext(DataDirectoryLock lock, FileStorage storage, Clock clock) {
@@ -49,12 +53,15 @@ public final class StudyFlowContext implements AutoCloseable {
         ProfileRepositories repositories = new ProfileRepositories(storage);
         settingsRepository = repositories.settings();
         settings = settingsRepository.load();
+        attendanceService = new AttendanceService(new AttendanceRepository(storage),
+                new AttendanceTargetRepository(storage), repositories.subjects()::load,
+                () -> settings().getDefaultAttendanceTarget());
         Function<String, Optional<Subject>> subjects = repositories.subjects()::findById;
         taskManager = validate(directory, "tasks/tasks.json",
                 () -> new TaskManager(clock, () -> settings().getDefaultPriority(), subjects, repositories.tasks()));
         subjectManager = validate(directory, "subjects/subjects.json",
                 () -> new SubjectManager(repositories.subjects(), taskManager,
-                        repositories.notes()::load, repositories.workspaces()::load));
+                        repositories.notes()::load, repositories.workspaces()::load, attendanceService::references));
         workspaceManager = validate(directory, "workspaces/workspaces.json",
                 () -> new WorkspaceManager(repositories.workspaces(), subjects, clock));
         noteManager = validate(directory, "notes/notes.json",
@@ -62,6 +69,7 @@ public final class StudyFlowContext implements AutoCloseable {
         searchService = new SearchService(taskManager, subjectManager, noteManager, workspaceManager);
         focusRepository = new FocusRepository(storage);
         focusRepository.load();
+        attendanceService.snapshot();
     }
 
     public static StudyFlowContext open(Path dataDirectory) throws IOException {
@@ -185,6 +193,10 @@ public final class StudyFlowContext implements AutoCloseable {
 
     public FocusRepository focusRepository() {
         return focusRepository;
+    }
+
+    public AttendanceService attendanceService() {
+        return attendanceService;
     }
 
     public synchronized UserSettings settings() {

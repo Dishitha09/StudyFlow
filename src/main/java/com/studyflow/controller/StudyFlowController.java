@@ -16,6 +16,7 @@ import com.studyflow.model.Theme;
 import com.studyflow.model.UserSettings;
 import com.studyflow.model.Workspace;
 import com.studyflow.service.TaskFilter;
+import com.studyflow.service.AttendanceService;
 import com.studyflow.service.TaskManager;
 import com.studyflow.service.ReminderService;
 import com.studyflow.strategy.SortByCreationDate;
@@ -162,6 +163,18 @@ public final class StudyFlowController {
         context.subjectManager().delete(id);
     }
 
+    public void addAttendance(String subjectId, LocalDate date, boolean attended) {
+        context.attendanceService().add(subjectId, date, attended);
+    }
+
+    public void correctAttendance(String id, LocalDate date, boolean attended) {
+        context.attendanceService().correct(id, date, attended);
+    }
+
+    public void setAttendanceTarget(String subjectId, int target) {
+        context.attendanceService().setTarget(subjectId, target);
+    }
+
     public void createWorkspace(String name, String description, List<String> members) {
         context.workspaceManager().create(name, description, members);
     }
@@ -205,7 +218,8 @@ public final class StudyFlowController {
                 assignments, tasks.today(), upcoming, tasks.smartPriority(), subjects);
         UserSettings settings = context.settings();
         return new Records(dashboard, taskRows(query), subjects, context.workspaceManager().findAll(),
-                context.noteManager().findAll(), settings.getTheme(), all, settings, context.focusRepository().load().size());
+                context.noteManager().findAll(), settings.getTheme(), all, settings,
+                context.focusRepository().load().size(), context.attendanceService().snapshot());
     }
 
     private List<Task> taskRows(TaskQuery query) {
@@ -259,5 +273,5 @@ public final class StudyFlowController {
 
     public record Records(DashboardData dashboard, List<Task> tasks, List<Subject> subjects,
                           List<Workspace> workspaces, List<Note> notes, Theme theme, List<Task> allTasks,
-                          UserSettings settings, int completedSessions) { }
+                          UserSettings settings, int completedSessions, AttendanceService.Snapshot attendance) { }
 }

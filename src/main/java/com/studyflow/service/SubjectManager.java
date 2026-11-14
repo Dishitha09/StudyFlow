@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Optional;
 import java.util.function.Supplier;
+import java.util.function.Predicate;
 
 /** Manages course records and their relationships to the academic workspace. */
 public final class SubjectManager {
@@ -19,13 +20,21 @@ public final class SubjectManager {
     private final TaskManager taskManager;
     private final Supplier<List<Note>> notes;
     private final Supplier<List<Workspace>> workspaces;
+    private final Predicate<String> otherReferences;
 
     public SubjectManager(Storage<List<Subject>> storage, TaskManager taskManager,
                           Supplier<List<Note>> notes, Supplier<List<Workspace>> workspaces) {
+        this(storage, taskManager, notes, workspaces, id -> false);
+    }
+
+    public SubjectManager(Storage<List<Subject>> storage, TaskManager taskManager,
+                          Supplier<List<Note>> notes, Supplier<List<Workspace>> workspaces,
+                          Predicate<String> otherReferences) {
         this.subjects = new AcademicCollection<>(storage, Subject::copy);
         this.taskManager = ValidationUtils.required(taskManager, "Task manager");
         this.notes = ValidationUtils.required(notes, "Note lookup");
         this.workspaces = ValidationUtils.required(workspaces, "Workspace lookup");
+        this.otherReferences = ValidationUtils.required(otherReferences, "Additional subject reference lookup");
     }
 
     public Subject create(String name, String code, String description, List<String> tags) {
@@ -57,6 +66,9 @@ public final class SubjectManager {
     public void delete(String id) {
         Subject subject = subjects.require(id, "Subject");
         String subjectId = subject.getId();
+        if (otherReferences.test(subjectId)) {
+            throw new IllegalStateException("Cannot delete a subject with attendance or study material records.");
+        }
         List<Task> tasks = taskManager.findBySubject(subjectId);
         if (!tasks.isEmpty()) {
             throw referencedSubject(subject, "task", tasks.getFirst().getTitle());

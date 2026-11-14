@@ -48,3 +48,7 @@
 
 - Added Calendar, Kanban, Focus with saved sessions, in-app reminders, global search, recurrence and subtask controls.
 - Passed 80 tests and exercised the calendar and Kanban controls in a native Swing probe.
+
+### 14 November · Stage 9
+
+- Added subject attendance, correction history, custom targets and exact projections. Fixed target JSON serialization during integration and passed 97 tests.

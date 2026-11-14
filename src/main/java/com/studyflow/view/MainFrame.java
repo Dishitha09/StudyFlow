@@ -9,6 +9,7 @@ import com.studyflow.model.Subject;
 import com.studyflow.model.TaskStatus;
 import com.studyflow.model.Theme;
 import com.studyflow.view.academic.AcademicPanel;
+import com.studyflow.view.attendance.AttendancePanel;
 import com.studyflow.view.dashboard.DashboardPanel;
 import com.studyflow.view.navigation.SidebarPanel;
 import com.studyflow.view.navigation.SidebarPanel.Page;
@@ -49,6 +50,7 @@ public final class MainFrame extends JFrame {
     private final KanbanPanel kanban;
     private final FocusPanel focus;
     private final SearchPanel search;
+    private final AttendancePanel attendance;
     private final javax.swing.Timer reminderTimer;
     private final javax.swing.JTextArea reminderText = new javax.swing.JTextArea(9, 48);
     private final JButton reminderButton = new JButton("Reminders");
@@ -100,6 +102,22 @@ public final class MainFrame extends JFrame {
                 session.subjectId(), session.planned(), session.actual()), "Focus session saved.",
                 () -> focusSaved(true)));
         search = new SearchPanel(this::search, this::openResult);
+        attendance = new AttendancePanel(new AttendancePanel.Actions() {
+            @Override
+            public void add(String subjectId, java.time.LocalDate date, boolean attended) {
+                change(() -> controller.addAttendance(subjectId, date, attended), "Class recorded.", null);
+            }
+
+            @Override
+            public void correct(String id, java.time.LocalDate date, boolean attended) {
+                change(() -> controller.correctAttendance(id, date, attended), "Class corrected.", null);
+            }
+
+            @Override
+            public void setTarget(String subjectId, int target) {
+                change(() -> controller.setAttendanceTarget(subjectId, target), "Target saved.", null);
+            }
+        });
 
         content.add(dashboard, Page.DASHBOARD.name());
         content.add(tasks, Page.TASKS.name());
@@ -111,6 +129,7 @@ public final class MainFrame extends JFrame {
         content.add(kanban, Page.KANBAN.name());
         content.add(focus, Page.FOCUS.name());
         content.add(search, Page.SEARCH.name());
+        content.add(attendance, Page.ATTENDANCE.name());
         for (Page page : Page.values()) {
             if (page.availableStage() > 0) {
                 content.add(availability(page.title(), page.availableStage()), page.name());
@@ -211,6 +230,7 @@ public final class MainFrame extends JFrame {
         calendar.showTasks(records.allTasks(), taskSubjects);
         kanban.showTasks(records.allTasks(), taskSubjects);
         focus.showData(records.allTasks(), taskSubjects, records.settings(), records.completedSessions());
+        attendance.showData(records.attendance());
     }
 
     private void query(TaskQuery query) {
@@ -280,6 +300,7 @@ public final class MainFrame extends JFrame {
         kanban.setBusy(busy);
         focus.setBusy(busy);
         search.setBusy(busy);
+        attendance.setBusy(busy);
     }
 
     public void setClosing() {

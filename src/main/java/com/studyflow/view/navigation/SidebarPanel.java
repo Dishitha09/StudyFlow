@@ -37,7 +37,7 @@ public final class SidebarPanel extends JPanel {
         SEARCH("Search", "navSearch", 0),
         FOCUS("Focus", "navFocus", 0),
         MATERIALS("Study Materials", "navMaterials", 10),
-        ATTENDANCE("Attendance", "navAttendance", 9),
+        ATTENDANCE("Attendance", "navAttendance", 0),
         ANALYTICS("Analytics", "navAnalytics", 8),
         SETTINGS("Settings", "navSettings", 0);
 
