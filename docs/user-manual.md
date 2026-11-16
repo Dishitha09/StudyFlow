@@ -25,9 +25,9 @@ java -jar StudyFlow.jar --data-dir "C:\StudyFlow data"
 ### Set up your workspace
 
 1. Open **Subjects** and choose **Add subject**. Enter a name and course code. Add a description and tags if you plan to search by them.
-2. Open **Workspaces** and add a workspace for a semester, project, or set of classes. Select the subjects it should contain.
+2. Open **Workspaces** and add a workspace for a semester, project, or set of classes. Select the subjects it should contain. Open a saved workspace to browse the subjects and the tasks and notes linked to them.
 3. Open **My Tasks** and choose **Add task**. Add a title and optional subject, priority, and deadline. Choose General, Assignment, Exam, or Study Session for the relevant fields. Enter deadlines as `YYYY-MM-DD`.
-4. Open **Notes** to capture plain-text study notes. Choose a related subject and add tags if useful.
+4. Open **Notes** to capture lecture notes, revision points, or ideas. Choose a related subject and add tags if useful. **Save note** or **Ctrl+S** writes it to `notes/notes.json` inside your local profile. Search the saved list to find it later.
 
 The Dashboard shows today's tasks, upcoming deadlines, Smart Priority, and task counts. Select **Complete** beside a due-today task to update it there. In **Settings**, select Light or Dark to save your appearance preference and enable or disable task reminders.
 
@@ -39,10 +39,10 @@ The Dashboard shows today's tasks, upcoming deadlines, Smart Priority, and task 
 
 - **My Tasks.** Select a task for its details and status or priority controls. Use **Edit** to change fields and **Delete** to remove the task and its subtasks after confirmation. Choose search terms and filters, then select **Apply**. Use **Clear filters** to restore the full listing.
 - **Subtasks and recurrence.** Open the selected task's subtask and recurrence controls. Add smaller steps and complete them independently. Set daily, weekly, or monthly recurrence on a root task with a deadline. Completing it creates the next occurrence.
-- **Calendar.** Navigate by month and select a date to see its scheduled tasks. Calendar deadlines use the same dates as My Tasks.
-- **Kanban Board.** Move a task between To do, In progress, and Completed using the board's controls. Reopen a completed task to To do before starting it again.
+- **Calendar.** Navigate by month, filter by subject, and select a date. Choose **Edit task** to change the deadline or assign a different subject. **Edit subject** opens the linked course for editing.
+- **Kanban Board.** The progress chart shows the share of tasks in each status and the number overdue. Cards show priority, type, and deadline. Move a task between **To do**, **In progress**, and **Completed** using the card controls.
 - **Search.** Enter words such as a course name plus a topic. Results are labeled by record type. Choose **Open result** or press Enter on a selected result to go to the record.
-- **Focus and Analytics.** Start a focus interval from the dashboard or navigation. Pause, resume, or finish it early. Analytics summarizes tasks, attendance, and completed focus sessions. Reminders are shown during an active StudyFlow session.
+- **Focus and Analytics.** Choose a focus or break preset, or type a custom length. Press **Ctrl+Space** to start, pause, or resume from the Focus panel. Link focus time to a task or subject, and use **Finish early** to record time spent. Analytics summarizes tasks, attendance, and completed focus sessions.
 
 ### Track attendance
 
@@ -61,14 +61,16 @@ An exact 100 percent target cannot be regained after a missed class. Attendance 
 
 1. Open **Study Materials**, then select **Upload PDF**. Pick a PDF with selectable text and enter its title and optional subject and description.
 2. Use **Search** to look up a saved document by title or metadata. Select **Open PDF** to open the managed copy with the computer's default PDF viewer.
-3. Choose **Study this PDF** or open the assistant from Study Materials. Select a topic and mode, then select **Run assistant**. Modes include summaries, key points, formulas, revision notes, questions, and explanation.
+3. Choose **Study this PDF** or open the **Study Assistant** tab. Select a topic and mode, then select **Run assistant**. Modes include summaries, key points, formulas, revision notes, and topic explanation.
 4. Review the file and page references alongside the study output. Use **Open source PDF** to check a passage in the original context.
 
-StudyFlow extracts existing PDF text. Image-only scans may need OCR before uploading. The local formula view looks for equation-like text, and the local question mode uses prompts and answer cues from relevant passages.
+**History** keeps the latest 50 saved requests and outputs in the current StudyFlow profile. Select an entry to read the output and its source references. **Use this request** fills the assistant form without running it. If you want to skip saving an output, turn off **Save in local history** before running it. **Clear history** removes the saved requests and outputs.
+
+StudyFlow extracts existing PDF text. Image-only scans may need OCR before uploading. The local formula view looks for equation-like text in retrieved passages.
 
 ### Optional connections
 
-- **Google Calendar.** In **Settings**, open **Integrations**. Select dated tasks and choose **Export .ics** for a local calendar file. For live sync, configure a Google desktop OAuth client with `STUDYFLOW_GOOGLE_CLIENT_ID` and `STUDYFLOW_GOOGLE_CLIENT_SECRET` before launching StudyFlow. Choose **Connect**, authorize in the browser, and sync selected tasks to the primary calendar. Reconnect each time you restart StudyFlow.
+- **Google Calendar.** From **Calendar**, choose **Google Calendar**. Select dated tasks and choose **Export .ics** for a file you can import without connecting StudyFlow. For live sync, choose **Setup help** and configure a desktop OAuth client before launching StudyFlow. Choose **Connect Google**, authorize in the browser, then sync selected deadlines to the primary calendar. Sync again after editing a task or subject to update its linked event. To remove an event from both places, use **Remove event** before deleting the StudyFlow task. Google-side edits do not flow back to StudyFlow. Reconnect after restarting.
 - **Spotify.** Paste an `https://open.spotify.com/` link in **Integrations**, choose **Save link**, then **Open playlist** to launch the saved item in your browser.
 - **OpenAI.** Set `OPENAI_API_KEY` before launching StudyFlow. The model defaults to `gpt-6-luna` and can be changed with `STUDYFLOW_OPENAI_MODEL`. **Test provider** checks model access. Choosing **Use configured AI provider** and consenting sends selected source passages and your request. Leave it off for local study.
 

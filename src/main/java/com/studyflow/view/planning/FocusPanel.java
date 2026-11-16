@@ -17,11 +17,14 @@ import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
 import java.time.Duration;
+import java.text.ParseException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import javax.swing.BorderFactory;
 import javax.swing.DefaultComboBoxModel;
@@ -34,6 +37,9 @@ import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JProgressBar;
 import javax.swing.JScrollPane;
+import javax.swing.JSpinner;
+import javax.swing.KeyStroke;
+import javax.swing.SpinnerNumberModel;
 import javax.swing.SwingConstants;
 import javax.swing.Timer;
 
@@ -62,7 +68,14 @@ public final class FocusPanel extends JPanel {
     private final JButton pause = button("Pause", "focusPause");
     private final JButton finish = button("Finish early", "focusFinish");
     private final JButton reset = button("Reset", "focusReset");
+    private final JSpinner minutes = new JSpinner(new SpinnerNumberModel(25, 1, 180, 1));
+    private final JButton[] presets = {button("15 min", "focusPresetShort"), button("25 min", "focusPresetStandard"),
+            button("50 min", "focusPresetLong")};
     private UserSettings settings = new UserSettings();
+    private Duration focusOverride;
+    private Duration breakOverride;
+    private Map<String, String> taskSubjects = Map.of();
+    private boolean refreshingInputs;
     private Session pending;
     private String currentTaskId;
     private String currentSubjectId;
@@ -101,15 +114,49 @@ public final class FocusPanel extends JPanel {
             update();
         });
         reset.addActionListener(event -> reset());
+        minutes.setName("focusMinutes");
+        minutes.getAccessibleContext().setAccessibleName("Interval length in minutes");
+        ((JSpinner.DefaultEditor) minutes.getEditor()).getTextField().setColumns(3);
+        minutes.addChangeListener(event -> editDuration());
+        for (int index = 0; index < presets.length; index++) {
+            int choice = index;
+            presets[index].addActionListener(event -> minutes.setValue(presetMinutes(choice)));
+        }
+        task.addActionListener(event -> {
+            String id = selectedId(task);
+            if (!refreshingInputs && id != null && taskSubjects.containsKey(id)) {
+                selectChoice(subject, taskSubjects.get(id));
+            }
+        });
+        getInputMap(WHEN_ANCESTOR_OF_FOCUSED_COMPONENT).put(KeyStroke.getKeyStroke("ctrl SPACE"), "focus-toggle");
+        getActionMap().put("focus-toggle", new javax.swing.AbstractAction() {
+            @Override
+            public void actionPerformed(java.awt.event.ActionEvent event) {
+                if (pause.isEnabled()) {
+                    pause.doClick();
+                } else if (start.isEnabled()) {
+                    start.doClick();
+                }
+            }
+        });
+        start.setToolTipText("Start or resume the timer (Ctrl+Space)");
+        pause.setToolTipText("Pause the timer (Ctrl+Space)");
         status.setName("focusStatus");
         showData(List.of(), List.of(), settings, 0);
     }
 
     public void showData(List<Task> tasks, List<Subject> subjects, UserSettings settings, int completedSessions) {
         this.settings = settings.copy();
-        replaceChoices(task, "No task", tasks.stream().map(value -> new Link(value.getId(), value.getTitle())));
-        replaceChoices(subject, "No subject",
-                subjects.stream().map(value -> new Link(value.getId(), value.getName())));
+        taskSubjects = tasks.stream().filter(value -> value.getSubjectId() != null)
+                .collect(Collectors.toMap(Task::getId, Task::getSubjectId));
+        refreshingInputs = true;
+        try {
+            replaceChoices(task, "No task", tasks.stream().map(value -> new Link(value.getId(), value.getTitle())));
+            replaceChoices(subject, "No subject",
+                    subjects.stream().map(value -> new Link(value.getId(), value.getName())));
+        } finally {
+            refreshingInputs = false;
+        }
         total.setText(completedSessions == 1 ? "1 completed session" : completedSessions + " completed sessions");
         if (clock.state() == FocusTimer.State.READY) {
             Duration next = duration(clock.mode());
@@ -117,6 +164,7 @@ public final class FocusPanel extends JPanel {
                 clock.reset(clock.mode(), next);
             }
         }
+        showDurationControls();
         update();
     }
 
@@ -165,7 +213,14 @@ public final class FocusPanel extends JPanel {
         JPanel card = ViewStyle.card(new BorderLayout(0, 18));
         card.setBorder(BorderFactory.createEmptyBorder(20, 22, 20, 22));
         card.add(createTimerFace(), BorderLayout.PAGE_START);
-        card.add(createLinks(), BorderLayout.CENTER);
+        JPanel options = new JPanel(new BorderLayout(0, 10));
+        options.setOpaque(false);
+        JLabel length = ViewStyle.muted("Minutes:");
+        length.setLabelFor(minutes);
+        options.add(row(new FlowLayout(FlowLayout.CENTER, 6, 4), length, minutes,
+                presets[0], presets[1], presets[2]), BorderLayout.PAGE_START);
+        options.add(createLinks(), BorderLayout.CENTER);
+        card.add(options, BorderLayout.CENTER);
 
         JPanel footer = new JPanel(new BorderLayout(0, 8));
         footer.setOpaque(false);
@@ -235,6 +290,17 @@ public final class FocusPanel extends JPanel {
             update();
             return;
         }
+        if (minutes.isEnabled()) {
+            try {
+                minutes.commitEdit();
+            } catch (ParseException error) {
+                status.setText("Enter a whole number from 1 to 180 minutes.");
+                var entry = ((JSpinner.DefaultEditor) minutes.getEditor()).getTextField();
+                entry.requestFocusInWindow();
+                entry.selectAll();
+                return;
+            }
+        }
         FocusTimer.State state = clock.state();
         if (state == FocusTimer.State.FINISHED) {
             clock.reset(clock.mode(), duration(clock.mode()));
@@ -254,6 +320,7 @@ public final class FocusPanel extends JPanel {
         update();
         if (pending == null && mode != clock.mode() && confirmDiscard()) {
             clock.reset(mode, duration(mode));
+            showDurationControls();
             update();
         }
     }
@@ -276,7 +343,48 @@ public final class FocusPanel extends JPanel {
     }
 
     private Duration duration(FocusTimer.Mode mode) {
-        return mode == FocusTimer.Mode.FOCUS ? settings.getFocusDuration() : settings.getBreakDuration();
+        if (mode == FocusTimer.Mode.FOCUS) {
+            return focusOverride == null ? settings.getFocusDuration() : focusOverride;
+        }
+        return breakOverride == null ? settings.getBreakDuration() : breakOverride;
+    }
+
+    private int presetMinutes(int index) {
+        return clock.mode() == FocusTimer.Mode.FOCUS ? switch (index) {
+            case 0 -> 15;
+            case 1 -> 25;
+            default -> 50;
+        } : switch (index) {
+            case 0 -> 5;
+            case 1 -> 10;
+            default -> 15;
+        };
+    }
+
+    private void showDurationControls() {
+        refreshingInputs = true;
+        try {
+            minutes.setValue((int) Math.clamp(clock.planned().toMinutes(), 1, 180));
+            for (int index = 0; index < presets.length; index++) {
+                presets[index].setText(presetMinutes(index) + " min");
+            }
+        } finally {
+            refreshingInputs = false;
+        }
+    }
+
+    private void editDuration() {
+        if (refreshingInputs || !minutes.isEnabled()) {
+            return;
+        }
+        Duration selected = Duration.ofMinutes((int) minutes.getValue());
+        if (clock.mode() == FocusTimer.Mode.FOCUS) {
+            focusOverride = selected;
+        } else {
+            breakOverride = selected;
+        }
+        clock.reset(clock.mode(), selected);
+        update();
     }
 
     private void update() {
@@ -316,6 +424,10 @@ public final class FocusPanel extends JPanel {
         boolean running = state == FocusTimer.State.RUNNING;
         boolean active = running || state == FocusTimer.State.PAUSED;
         boolean linkable = available && !active && clock.mode() == FocusTimer.Mode.FOCUS;
+        minutes.setEnabled(available && !active);
+        for (JButton preset : presets) {
+            preset.setEnabled(minutes.isEnabled());
+        }
         task.setEnabled(linkable);
         subject.setEnabled(linkable);
         focus.setEnabled(available && clock.mode() != FocusTimer.Mode.FOCUS);
@@ -335,10 +447,12 @@ public final class FocusPanel extends JPanel {
             return sending ? "Saving session…" : "Waiting to save session…";
         }
         return switch (state) {
-            case READY -> " ";
+            case READY -> "Choose a duration, then start. Ctrl+Space starts or pauses.";
             case RUNNING -> "In progress";
             case PAUSED -> "Paused";
-            case FINISHED -> clock.mode() == FocusTimer.Mode.FOCUS ? "Session saved" : "Break finished";
+            case FINISHED -> clock.mode() == FocusTimer.Mode.FOCUS
+                    ? "Session saved. Take a break or start another focus interval."
+                    : "Break finished. Switch to Focus when you're ready.";
         };
     }
 
@@ -358,8 +472,16 @@ public final class FocusPanel extends JPanel {
         options.add(new Link(null, none));
         records.forEach(options::add);
         field.setModel(new DefaultComboBoxModel<>(options.toArray(Link[]::new)));
-        options.stream().filter(value -> Objects.equals(value.id(), previous)).findFirst()
-                .ifPresent(field::setSelectedItem);
+        selectChoice(field, previous);
+    }
+
+    private static void selectChoice(JComboBox<Link> field, String id) {
+        for (int index = 0; index < field.getItemCount(); index++) {
+            if (Objects.equals(field.getItemAt(index).id(), id)) {
+                field.setSelectedIndex(index);
+                return;
+            }
+        }
     }
 
     private static String selectedId(JComboBox<Link> picker) {

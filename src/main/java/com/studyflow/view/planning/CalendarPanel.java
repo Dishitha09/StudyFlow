@@ -18,12 +18,16 @@ import java.time.format.TextStyle;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
 import javax.swing.JButton;
+import javax.swing.JComboBox;
+import javax.swing.DefaultComboBoxModel;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
@@ -32,23 +36,36 @@ import javax.swing.SwingConstants;
 /** Monthly date picker and deadline list backed by the current task snapshot. */
 public final class CalendarPanel extends JPanel {
     private final Consumer<String> openTask;
+    private final Consumer<Task> editTask;
+    private final Consumer<String> editSubject;
     private final JLabel monthLabel = ViewStyle.subheading("");
     private final JLabel selectedLabel = ViewStyle.subheading("");
     private final JPanel days = new JPanel(new GridLayout(0, 7, 5, 5));
     private final JPanel eventList = new JPanel();
     private final JButton previous = new JButton("‹");
     private final JButton next = new JButton("›");
+    private final JComboBox<SubjectFilter> subjectFilter = new JComboBox<>();
     private YearMonth month = YearMonth.now();
     private LocalDate selected = LocalDate.now();
     private Map<LocalDate, List<Task>> tasksByDate = Map.of();
     private Map<String, String> subjects = Map.of();
+    private Set<String> linkedTasks = Set.of();
 
-    public CalendarPanel(Consumer<String> openTask) {
+    public CalendarPanel(Consumer<String> openTask, Consumer<Task> editTask, Consumer<String> editSubject,
+                         Runnable openGoogle) {
         super(new BorderLayout(0, 14));
         this.openTask = openTask;
+        this.editTask = editTask;
+        this.editSubject = editSubject;
         setName("calendarPanel");
         setBorder(BorderFactory.createEmptyBorder(24, 26, 24, 26));
-        add(ViewStyle.heading("Calendar"), BorderLayout.PAGE_START);
+        JPanel heading = new JPanel(new BorderLayout(10, 0));
+        heading.setOpaque(false);
+        heading.add(ViewStyle.heading("Calendar"), BorderLayout.LINE_START);
+        JButton google = new JButton("Google Calendar…");
+        calendarButton(google, "calendarGoogle", "Manage Google Calendar sync or export a calendar file", openGoogle);
+        heading.add(google, BorderLayout.LINE_END);
+        add(heading, BorderLayout.PAGE_START);
 
         JPanel content = new PlanningScrollContent(new BorderLayout(0, 14));
         content.add(monthCard(), BorderLayout.PAGE_START);
@@ -59,10 +76,27 @@ public final class CalendarPanel extends JPanel {
         render();
     }
 
-    public void showTasks(List<Task> tasks, List<Subject> subjects) {
+    public void showTasks(List<Task> tasks, List<Subject> subjects, Set<String> linkedTasks) {
         tasksByDate = tasks.stream().filter(task -> task.getDueDate() != null).sorted()
                 .collect(Collectors.groupingBy(Task::getDueDate));
         this.subjects = PlanningLabels.subjectNames(subjects);
+        this.linkedTasks = Set.copyOf(linkedTasks);
+        SubjectFilter previous = (SubjectFilter) subjectFilter.getSelectedItem();
+        var filters = new DefaultComboBoxModel<SubjectFilter>();
+        filters.addElement(new SubjectFilter(null, "All subjects"));
+        filters.addElement(new SubjectFilter("", "No subject"));
+        subjects.stream().sorted(java.util.Comparator.comparing(Subject::getName, String.CASE_INSENSITIVE_ORDER))
+                .map(subject -> new SubjectFilter(subject.getId(), subject.getName() + " (" + subject.getSubjectCode() + ")"))
+                .forEach(filters::addElement);
+        if (previous != null) {
+            for (int index = 0; index < filters.getSize(); index++) {
+                if (Objects.equals(filters.getElementAt(index).id(), previous.id())) {
+                    filters.setSelectedItem(filters.getElementAt(index));
+                    break;
+                }
+            }
+        }
+        subjectFilter.setModel(filters);
         render();
     }
 
@@ -87,7 +121,23 @@ public final class CalendarPanel extends JPanel {
         navigation.add(today);
         navigation.add(next);
         header.add(navigation, BorderLayout.LINE_END);
-        card.add(header, BorderLayout.PAGE_START);
+        JPanel toolbar = new JPanel(new BorderLayout(0, 6));
+        toolbar.setOpaque(false);
+        toolbar.add(header, BorderLayout.PAGE_START);
+        JPanel filters = new JPanel(new FlowLayout(FlowLayout.LEADING, 6, 0));
+        filters.setOpaque(false);
+        JLabel filterLabel = ViewStyle.muted("Subject:");
+        filterLabel.setLabelFor(subjectFilter);
+        subjectFilter.setName("calendarSubjectFilter");
+        var filterRenderer = new javax.swing.DefaultListCellRenderer();
+        filterRenderer.putClientProperty("html.disable", Boolean.TRUE);
+        subjectFilter.setRenderer(filterRenderer);
+        subjectFilter.setPrototypeDisplayValue(new SubjectFilter(null, "Select a course subject"));
+        subjectFilter.addActionListener(event -> render());
+        filters.add(filterLabel);
+        filters.add(subjectFilter);
+        toolbar.add(filters, BorderLayout.PAGE_END);
+        card.add(toolbar, BorderLayout.PAGE_START);
 
         JPanel week = new JPanel(new GridLayout(1, 7, 5, 0));
         week.setOpaque(false);
@@ -199,23 +249,46 @@ public final class CalendarPanel extends JPanel {
         eventList.removeAll();
         List<Task> tasks = deadlines(selected);
         if (tasks.isEmpty()) {
-            eventList.add(ViewStyle.muted("No deadlines for this date."));
+            eventList.add(ViewStyle.muted("No matching deadlines for this date."));
         } else {
             for (Task task : tasks) {
                 String type = PlanningLabels.type(task.getType());
+                String details = PlanningLabels.subject(subjects, task) + " · " + PlanningLabels.status(task.getStatus())
+                        + (linkedTasks.contains(task.getId()) ? " · Linked to Google" : "");
                 JButton item = new JButton(type + "  ·  " + task.getTitle());
                 item.setName("calendarEvent-" + task.getId());
                 item.setHorizontalAlignment(SwingConstants.LEADING);
                 item.setAlignmentX(LEFT_ALIGNMENT);
                 item.setMaximumSize(new Dimension(Integer.MAX_VALUE, item.getPreferredSize().height));
-                item.setToolTipText(type + " · " + PlanningLabels.subject(subjects, task) + " · "
-                        + PlanningLabels.status(task.getStatus()));
+                item.setToolTipText(details);
                 if (task.getType() == TaskType.EXAM) {
                     item.setForeground(ViewStyle.color("accent"));
                 }
                 item.addActionListener(event -> openTask.accept(task.getId()));
-                eventList.add(item);
-                eventList.add(Box.createVerticalStrut(5));
+                JPanel row = new JPanel(new BorderLayout(6, 4));
+                row.setOpaque(false);
+                row.setAlignmentX(LEFT_ALIGNMENT);
+                row.add(item, BorderLayout.CENTER);
+                JLabel metadata = ViewStyle.muted("");
+                metadata.putClientProperty("html.disable", Boolean.TRUE);
+                metadata.setText(details);
+                row.add(metadata, BorderLayout.PAGE_END);
+                JPanel actions = new JPanel(new FlowLayout(FlowLayout.TRAILING, 4, 0));
+                actions.setOpaque(false);
+                JButton edit = new JButton("Edit task");
+                calendarButton(edit, "calendarEditTask-" + task.getId(), "Edit deadline or change the task's subject",
+                        () -> editTask.accept(task));
+                actions.add(edit);
+                if (task.getSubjectId() != null && subjects.containsKey(task.getSubjectId())) {
+                    JButton editCourse = new JButton("Edit subject");
+                    calendarButton(editCourse, "calendarEditSubject-" + task.getId(),
+                            "Edit the linked course's name, code or details", () -> editSubject.accept(task.getSubjectId()));
+                    actions.add(editCourse);
+                }
+                row.add(actions, BorderLayout.LINE_END);
+                row.setMaximumSize(new Dimension(Integer.MAX_VALUE, row.getPreferredSize().height));
+                eventList.add(row);
+                eventList.add(Box.createVerticalStrut(8));
             }
         }
         eventList.revalidate();
@@ -223,7 +296,17 @@ public final class CalendarPanel extends JPanel {
     }
 
     private List<Task> deadlines(LocalDate date) {
-        return tasksByDate.getOrDefault(date, List.of());
+        List<Task> tasks = tasksByDate.getOrDefault(date, List.of());
+        SubjectFilter filter = (SubjectFilter) subjectFilter.getSelectedItem();
+        if (filter == null || filter.id() == null) {
+            return tasks;
+        }
+        String id = filter.id().isEmpty() ? null : filter.id();
+        return tasks.stream().filter(task -> Objects.equals(id, task.getSubjectId())).toList();
+    }
+
+    private record SubjectFilter(String id, String label) {
+        @Override public String toString() { return label; }
     }
 
     private void changeMonth(YearMonth target) {

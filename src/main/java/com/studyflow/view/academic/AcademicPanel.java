@@ -3,6 +3,7 @@ package com.studyflow.view.academic;
 import com.studyflow.interfaces.Identifiable;
 import com.studyflow.model.Note;
 import com.studyflow.model.Subject;
+import com.studyflow.model.Task;
 import com.studyflow.model.Workspace;
 import com.studyflow.view.ViewStyle;
 
@@ -30,7 +31,10 @@ import javax.swing.JList;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JTextArea;
+import javax.swing.JTextField;
 import javax.swing.ListSelectionModel;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
 
 /** List and editor for one kind of academic record. Mutations are delegated to the application. */
 public final class AcademicPanel extends JPanel {
@@ -58,7 +62,10 @@ public final class AcademicPanel extends JPanel {
         void createNote(String title, String content, String subjectId, List<String> tags);
         void updateNote(String id, String title, String content, String subjectId, List<String> tags);
         void deleteNote(String id);
+        void openWorkspaceItem(LinkedRecord kind, String id);
     }
+
+    public enum LinkedRecord { SUBJECT, TASK, NOTE }
 
     private static final DateTimeFormatter DATE_TIME = DateTimeFormatter.ofPattern("d MMM uuuu, HH:mm");
     private static final String DETAIL = "detail";
@@ -74,10 +81,16 @@ public final class AcademicPanel extends JPanel {
     private final JButton add;
     private final JButton edit = new JButton("Edit");
     private final JButton delete = new JButton("Delete");
+    private final JButton openSubject = new JButton("Open subject");
+    private final JTextField noteSearch = new JTextField();
     private final CardLayout detailCards = new CardLayout();
     private final JPanel detailArea = new JPanel(detailCards);
     private final JPanel editorArea = new JPanel(new BorderLayout());
+    private final WorkspaceContentsPanel workspaceContents;
     private List<Subject> subjects = List.of();
+    private List<Task> tasks = List.of();
+    private List<Note> notes = List.of();
+    private List<RecordRow> allRows = List.of();
     private AcademicFormPanel form;
     private boolean busy;
 
@@ -86,6 +99,7 @@ public final class AcademicPanel extends JPanel {
         this.kind = Objects.requireNonNull(kind);
         this.actions = Objects.requireNonNull(actions);
         this.add = ViewStyle.primary(new JButton("Add " + kind.singular));
+        workspaceContents = kind == Kind.WORKSPACES ? new WorkspaceContentsPanel(actions::openWorkspaceItem) : null;
         setName(kind.singular + "Page");
         setOpaque(false);
         setBorder(BorderFactory.createEmptyBorder(25, 25, 24, 25));
@@ -96,16 +110,30 @@ public final class AcademicPanel extends JPanel {
 
     /** Updates detached records while preserving the selected ID and any pending form edits. */
     public void showRecords(List<Subject> subjects, List<Workspace> workspaces, List<Note> notes) {
+        showRecords(subjects, workspaces, notes, List.of());
+    }
+
+    public void showRecords(List<Subject> subjects, List<Workspace> workspaces, List<Note> notes, List<Task> tasks) {
         this.subjects = List.copyOf(subjects);
+        this.tasks = List.copyOf(tasks);
+        this.notes = List.copyOf(notes);
         if (form != null) {
             form.showSubjects(subjects);
         }
         Map<String, String> names = subjects.stream().collect(Collectors.toMap(Subject::getId, Subject::getName));
-        List<RecordRow> refreshed = switch (kind) {
+        allRows = switch (kind) {
             case SUBJECTS -> subjects.stream().map(AcademicPanel::subjectRow).toList();
             case WORKSPACES -> workspaces.stream().map(workspace -> workspaceRow(workspace, names)).toList();
             case NOTES -> notes.stream().map(note -> noteRow(note, names)).toList();
         };
+        refreshRows();
+    }
+
+    private void refreshRows() {
+        String query = noteSearch.getText().strip();
+        List<RecordRow> refreshed = kind == Kind.NOTES && !query.isEmpty()
+                ? allRows.stream().filter(row -> ((Note) row.record()).matchesSearch(query)).toList()
+                : allRows;
         RecordRow selected = list.getSelectedValue();
         rows.clear();
         rows.addAll(refreshed);
@@ -121,7 +149,7 @@ public final class AcademicPanel extends JPanel {
             list.setSelectedIndex(0);
         }
         String label = refreshed.size() == 1 ? kind.singular : kind.heading.toLowerCase(Locale.ROOT);
-        count.setText(refreshed.size() + " " + label);
+        count.setText(refreshed.size() + " " + label + (refreshed.size() < allRows.size() ? " found" : ""));
         updateDetails();
     }
 
@@ -129,14 +157,42 @@ public final class AcademicPanel extends JPanel {
         openEditor(null);
     }
 
-    public void selectRecord(String id) {
-        for (int index = 0; index < rows.size(); index++) {
-            if (rows.get(index).record().getId().equals(id)) {
-                list.setSelectedIndex(index);
-                list.ensureIndexIsVisible(index);
-                return;
-            }
+    public void openEdit(String id) {
+        RecordRow row = findRow(id);
+        if (row != null && openEditor(row.record())) {
+            selectRow(row);
         }
+    }
+
+    public void selectRecord(String id) {
+        RecordRow row = findRow(id);
+        if (row == null || form != null && !form.confirmDiscard()) {
+            return;
+        }
+        if (form != null) {
+            closeEditor();
+        }
+        selectRow(row);
+    }
+
+    private void selectRow(RecordRow row) {
+        int index = rows.indexOf(row);
+        if (kind == Kind.NOTES && index < 0) {
+            noteSearch.setText("");
+            index = rows.indexOf(row);
+        }
+        if (index >= 0) {
+            list.setSelectedIndex(index);
+            list.ensureIndexIsVisible(index);
+        }
+    }
+
+    private RecordRow findRow(String id) {
+        return allRows.stream().filter(row -> row.record().getId().equals(id)).findFirst().orElse(null);
+    }
+
+    public boolean hasUnsavedChanges() {
+        return form != null && form.hasUnsavedChanges();
     }
 
     public void setBusy(boolean busy) {
@@ -149,6 +205,20 @@ public final class AcademicPanel extends JPanel {
 
     /** Closes the editor after the parent confirms that a mutation was saved. */
     public void finishEdit() {
+        if (form == null) {
+            return;
+        }
+        String savedId = form.recordId();
+        if (savedId == null && !allRows.isEmpty()) {
+            savedId = allRows.getLast().record().getId();
+        }
+        closeEditor();
+        if (savedId != null) {
+            selectRecord(savedId);
+        }
+    }
+
+    private void closeEditor() {
         form = null;
         editorArea.removeAll();
         detailCards.show(detailArea, DETAIL);
@@ -162,7 +232,17 @@ public final class AcademicPanel extends JPanel {
         JPanel title = new JPanel(new BorderLayout(0, 4));
         title.setOpaque(false);
         title.add(ViewStyle.heading(kind.heading), BorderLayout.PAGE_START);
-        title.add(count, BorderLayout.PAGE_END);
+        JPanel caption = new JPanel(new BorderLayout(0, 3));
+        caption.setOpaque(false);
+        if (kind == Kind.NOTES) {
+            caption.add(ViewStyle.muted("Keep plain-text study notes. Use Save note to store changes on this device."),
+                    BorderLayout.PAGE_START);
+        } else if (kind == Kind.WORKSPACES) {
+            caption.add(ViewStyle.muted("Group subjects for a term or project and browse their linked tasks and notes."),
+                    BorderLayout.PAGE_START);
+        }
+        caption.add(count, BorderLayout.PAGE_END);
+        title.add(caption, BorderLayout.PAGE_END);
         header.add(title, BorderLayout.CENTER);
 
         JPanel actionsRow = new JPanel(new GridBagLayout());
@@ -187,12 +267,16 @@ public final class AcademicPanel extends JPanel {
             }
         });
 
-        JPanel listing = ViewStyle.card(new BorderLayout());
+        JPanel listing = ViewStyle.card(new BorderLayout(0, 8));
         listing.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
         var listScroll = ViewStyle.scroll(list);
         listScroll.setOpaque(false);
         listScroll.getViewport().setOpaque(false);
         listScroll.setPreferredSize(new Dimension(255, 220));
+        if (kind == Kind.NOTES) {
+            configureNoteSearch();
+            listing.add(noteSearch, BorderLayout.PAGE_START);
+        }
         listing.add(listScroll, BorderLayout.CENTER);
 
         detailArea.setOpaque(false);
@@ -232,7 +316,16 @@ public final class AcademicPanel extends JPanel {
         var detailScroll = ViewStyle.scroll(details);
         detailScroll.setOpaque(false);
         detailScroll.getViewport().setOpaque(false);
-        card.add(detailScroll, BorderLayout.CENTER);
+        if (workspaceContents == null) {
+            card.add(detailScroll, BorderLayout.CENTER);
+        } else {
+            detailScroll.setPreferredSize(new Dimension(0, 96));
+            JPanel workspaceDetails = new JPanel(new BorderLayout(0, 8));
+            workspaceDetails.setOpaque(false);
+            workspaceDetails.add(detailScroll, BorderLayout.PAGE_START);
+            workspaceDetails.add(workspaceContents, BorderLayout.CENTER);
+            card.add(workspaceDetails, BorderLayout.CENTER);
+        }
 
         JPanel buttons = new JPanel(new FlowLayout(FlowLayout.LEADING, 8, 0));
         buttons.setOpaque(false);
@@ -247,6 +340,16 @@ public final class AcademicPanel extends JPanel {
         delete.addActionListener(event -> deleteSelected());
         buttons.add(edit);
         buttons.add(delete);
+        if (kind == Kind.NOTES) {
+            openSubject.setName("noteOpenSubject");
+            openSubject.addActionListener(event -> {
+                Note selected = selectedNote();
+                if (selected != null && selected.getSubjectId() != null) {
+                    actions.openWorkspaceItem(LinkedRecord.SUBJECT, selected.getSubjectId());
+                }
+            });
+            buttons.add(openSubject);
+        }
         card.add(buttons, BorderLayout.PAGE_END);
         return card;
     }
@@ -274,27 +377,49 @@ public final class AcademicPanel extends JPanel {
         return cell;
     }
 
-    private void openEditor(Identifiable record) {
+    private boolean openEditor(Identifiable record) {
         if (busy) {
-            return;
+            return false;
         }
         if (form != null && !form.confirmDiscard()) {
-            return;
+            return false;
         }
-        form = new AcademicFormPanel(kind, subjects, record, actions, this::finishEdit);
+        form = new AcademicFormPanel(kind, subjects, record, actions, this::closeEditor);
         editorArea.removeAll();
         editorArea.add(form, BorderLayout.CENTER);
         detailCards.show(detailArea, EDITOR);
         editorArea.revalidate();
         form.focusTitle();
         updateControls();
+        return true;
+    }
+
+    private void configureNoteSearch() {
+        noteSearch.setName("noteSearch");
+        noteSearch.putClientProperty("JTextField.placeholderText", "Search notes");
+        noteSearch.putClientProperty("JTextField.showClearButton", true);
+        noteSearch.getAccessibleContext().setAccessibleName("Search note titles, content and tags");
+        noteSearch.getDocument().addDocumentListener(new DocumentListener() {
+            @Override public void insertUpdate(DocumentEvent event) { refreshRows(); }
+            @Override public void removeUpdate(DocumentEvent event) { refreshRows(); }
+            @Override public void changedUpdate(DocumentEvent event) { refreshRows(); }
+        });
     }
 
     private void updateDetails() {
         RecordRow selected = list.getSelectedValue();
         detailTitle.putClientProperty("html.disable", true);
-        detailTitle.setText(selected == null ? "No " + kind.heading.toLowerCase(Locale.ROOT) + " yet" : selected.title());
-        details.setText(selected == null ? "Use Add " + kind.singular + " to create your first record." : selected.details());
+        if (selected == null) {
+            boolean filtered = kind == Kind.NOTES && !noteSearch.getText().isBlank();
+            detailTitle.setText(filtered ? "No matching notes" : "No " + kind.heading.toLowerCase(Locale.ROOT) + " yet");
+            details.setText(filtered ? "Try a different title, topic or tag." : emptyDetails());
+        } else {
+            detailTitle.setText(selected.title());
+            details.setText(selected.details());
+        }
+        if (workspaceContents != null) {
+            workspaceContents.show(selected == null ? null : (Workspace) selected.record(), subjects, tasks, notes);
+        }
         details.setCaretPosition(0);
         updateControls();
     }
@@ -304,6 +429,24 @@ public final class AcademicPanel extends JPanel {
         add.setEnabled(!busy);
         edit.setEnabled(!busy && selected);
         delete.setEnabled(!busy && selected);
+        Note note = selectedNote();
+        openSubject.setEnabled(!busy && note != null && note.getSubjectId() != null);
+        if (workspaceContents != null) {
+            workspaceContents.setBusy(busy);
+        }
+    }
+
+    private String emptyDetails() {
+        return switch (kind) {
+            case SUBJECTS -> "Use Add subject to create your first subject.";
+            case WORKSPACES -> "Choose Add workspace, give it a name and select the subjects to include.";
+            case NOTES -> "Choose Add note to write a note. You can link it to a subject or leave it unassigned.";
+        };
+    }
+
+    private Note selectedNote() {
+        RecordRow selected = list.getSelectedValue();
+        return selected != null && selected.record() instanceof Note note ? note : null;
     }
 
     private void deleteSelected() {
@@ -311,7 +454,8 @@ public final class AcademicPanel extends JPanel {
         if (selected == null || busy) {
             return;
         }
-        JTextArea message = new JTextArea("Delete “" + selected.title() + "”?", 3, 32);
+        String scope = kind == Kind.WORKSPACES ? "\n\nIts subjects, tasks and notes will remain in StudyFlow." : "";
+        JTextArea message = new JTextArea("Delete “" + selected.title() + "”?" + scope, 4, 32);
         message.setEditable(false);
         message.setOpaque(false);
         message.setLineWrap(true);

@@ -84,6 +84,11 @@ public final class FileStorage implements AutoCloseable {
     }
 
     synchronized <D> void write(Path path, JavaType type, D candidate, Consumer<D> validateDocument) {
+        write(path, type, candidate, validateDocument, true);
+    }
+
+    synchronized <D> void write(Path path, JavaType type, D candidate, Consumer<D> validateDocument,
+                                boolean backupPrevious) {
         ensureOpen();
         validate(path, candidate, document -> {
             validateDocument.accept(document);
@@ -107,7 +112,16 @@ public final class FileStorage implements AutoCloseable {
         } catch (IOException | RuntimeException ex) {
             throw new StorageException(path, "Cannot serialize the StudyFlow data", ex);
         }
-        replace(path, bytes, previousBytes, false);
+        replace(path, bytes, backupPrevious ? previousBytes : null, false);
+    }
+
+    synchronized void removeSnapshot(Path path) {
+        ensureOpen();
+        try {
+            Files.deleteIfExists(path);
+        } catch (IOException | SecurityException ex) {
+            throw new StorageException(path, "Cannot remove the StudyFlow data file", ex);
+        }
     }
 
     /** Copies the exact current bytes of a validated snapshot to a new timestamped backup. */

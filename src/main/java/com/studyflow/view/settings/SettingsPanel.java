@@ -17,6 +17,7 @@ public final class SettingsPanel extends JPanel {
     private final JRadioButton light = new JRadioButton("Light");
     private final JRadioButton dark = new JRadioButton("Dark");
     private final JCheckBox notifications = new JCheckBox("Show task reminders");
+    private final javax.swing.JTabbedPane tabs = new javax.swing.JTabbedPane();
 
     public SettingsPanel(Consumer<Theme> changeTheme, Consumer<Boolean> changeNotifications,
                          IntegrationsPanel integrations) {
@@ -54,7 +55,6 @@ public final class SettingsPanel extends JPanel {
 
         JPanel body = new JPanel(new BorderLayout());
         body.setOpaque(false);
-        javax.swing.JTabbedPane tabs = new javax.swing.JTabbedPane();
         JPanel appearance = new JPanel(new BorderLayout());
         appearance.add(card, BorderLayout.PAGE_START);
         tabs.addTab("Appearance", appearance);
@@ -66,6 +66,10 @@ public final class SettingsPanel extends JPanel {
     public void showTheme(Theme theme) {
         light.setSelected(theme == Theme.LIGHT);
         dark.setSelected(theme == Theme.DARK);
+    }
+
+    public void openIntegrations() {
+        tabs.setSelectedIndex(1);
     }
 
     public void setBusy(boolean busy) {

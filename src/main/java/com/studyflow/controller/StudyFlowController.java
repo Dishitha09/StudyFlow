@@ -10,6 +10,7 @@ import com.studyflow.model.Note;
 import com.studyflow.model.Priority;
 import com.studyflow.model.StudySession;
 import com.studyflow.model.StudyMaterial;
+import com.studyflow.model.StudyHistoryEntry;
 import com.studyflow.model.Subject;
 import com.studyflow.model.Task;
 import com.studyflow.model.TaskStatus;
@@ -79,15 +80,23 @@ public final class StudyFlowController {
                 : context.materialLibrary().search(text)), success, failure);
     }
 
-    public void study(String text, String id, StudyAssistant.Mode mode, boolean remote,
-                      Consumer<StudyAssistant.Answer> success, Consumer<String> failure) {
+    public void study(String text, String id, StudyAssistant.Mode mode, boolean remote, boolean saveHistory,
+                      Consumer<StudyAssistant.RunResult> success, Consumer<String> failure) {
         submit(() -> {
             try {
-                return context.studyAssistant().study(text, id, mode, remote);
+                return context.studyAssistant().run(text, id, mode, remote, saveHistory);
             } catch (IOException error) {
                 throw new UncheckedIOException(error.getMessage(), error);
             }
         }, success, failure);
+    }
+
+    public void loadStudyHistory(Consumer<List<StudyHistoryEntry>> success, Consumer<String> failure) {
+        submit(context.studyAssistant()::history, success, failure);
+    }
+
+    public void clearStudyHistory() {
+        context.studyAssistant().clearHistory();
     }
 
     public void uploadMaterial(Path source, String title, String description, String subjectId) {
@@ -125,10 +134,16 @@ public final class StudyFlowController {
     public void connectGoogle() { integration(() -> context.integrations().google().connect()); }
     public void disconnectGoogle() { context.integrations().google().disconnect(); }
     public void testGoogle() { integration(() -> context.integrations().google().calendarId()); }
-    public void syncGoogle(List<String> ids) { integration(() -> context.integrations().sync(selected(ids))); }
+    public void openGoogleSetup() {
+        openBrowser("https://developers.google.com/identity/protocols/oauth2/native-app");
+    }
+    public void openGoogleCalendar() { openBrowser("https://calendar.google.com/calendar/"); }
+    public void syncGoogle(List<String> ids) {
+        integration(() -> context.integrations().sync(selected(ids), context.subjectManager().findAll()));
+    }
     public void removeEvent(String id) { integration(() -> context.integrations().deleteEvent(id)); }
     public void exportCalendar(Path path, List<String> ids) {
-        integration(() -> context.integrations().export(path, selected(ids)));
+        integration(() -> context.integrations().export(path, selected(ids), context.subjectManager().findAll()));
     }
     public void addPlaylist(String url) { context.integrations().addPlaylist(url); }
     public void removePlaylist(String url) { context.integrations().removePlaylist(url); }
@@ -146,6 +161,16 @@ public final class StudyFlowController {
         } catch (IOException error) {
             throw new UncheckedIOException(error.getMessage(), error);
         }
+    }
+
+    private static void openBrowser(String url) {
+        integration(() -> {
+            if (!java.awt.Desktop.isDesktopSupported()
+                    || !java.awt.Desktop.getDesktop().isSupported(java.awt.Desktop.Action.BROWSE)) {
+                throw new IOException("This computer could not open a browser. Open " + url);
+            }
+            java.awt.Desktop.getDesktop().browse(java.net.URI.create(url));
+        });
     }
 
     @FunctionalInterface
@@ -310,7 +335,7 @@ public final class StudyFlowController {
                 context.focusRepository().load().size(), context.attendanceService().snapshot(),
                 context.materialLibrary().findAll(), context.studyAssistant().remoteAvailable(),
                 context.integrations().google().configured(), context.integrations().google().connected(),
-                context.integrations().playlists());
+                context.integrations().linkedCalendarTasks(), context.integrations().playlists());
     }
 
     private List<Task> taskRows(TaskQuery query) {
@@ -367,7 +392,7 @@ public final class StudyFlowController {
                           List<Workspace> workspaces, List<Note> notes, Theme theme, List<Task> allTasks,
                           UserSettings settings, int completedSessions, AttendanceService.Snapshot attendance,
                           List<StudyMaterial> materials, boolean remoteAi, boolean googleConfigured,
-                          boolean googleConnected, List<String> playlists) { }
+                          boolean googleConnected, Set<String> linkedCalendarTasks, List<String> playlists) { }
 
     public record SearchData(com.studyflow.service.SearchService.SearchResults records,
                              List<StudyMaterial> materials) { }

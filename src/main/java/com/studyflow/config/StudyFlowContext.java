@@ -18,6 +18,7 @@ import com.studyflow.integrations.OpenAiProvider;
 import com.studyflow.repository.MemoryStorage;
 import com.studyflow.repository.NoteRepository;
 import com.studyflow.repository.SettingsRepository;
+import com.studyflow.repository.StudyHistoryRepository;
 import com.studyflow.repository.SubjectRepository;
 import com.studyflow.repository.TaskRepository;
 import com.studyflow.repository.WorkspaceRepository;
@@ -67,7 +68,7 @@ public final class StudyFlowContext implements AutoCloseable {
         materialLibrary = new MaterialLibrary(directory.resolve("materials"), new MaterialRepository(storage),
                 repositories.subjects()::existsById, clock);
         aiProvider = OpenAiProvider.fromEnvironment();
-        studyAssistant = new StudyAssistant(materialLibrary, aiProvider);
+        studyAssistant = new StudyAssistant(materialLibrary, aiProvider, new StudyHistoryRepository(storage), clock);
         integrations = new LocalIntegrations(new IntegrationRepository(storage), new GoogleCalendar(), clock);
         attendanceService = new AttendanceService(new AttendanceRepository(storage),
                 new AttendanceTargetRepository(storage), repositories.subjects()::load,

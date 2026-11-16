@@ -1,5 +1,6 @@
 package com.studyflow.integrations;
 
+import com.studyflow.model.Subject;
 import com.studyflow.model.Task;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -9,6 +10,7 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Map;
 
 /** Exports the selected task deadlines as all-day iCalendar events. */
 public final class CalendarExport {
@@ -16,7 +18,8 @@ public final class CalendarExport {
             .withZone(ZoneOffset.UTC);
     private CalendarExport() { }
 
-    public static void write(Path path, List<Task> tasks, Instant generatedAt) throws IOException {
+    public static void write(Path path, List<Task> tasks, Instant generatedAt, Map<String, Subject> subjects)
+            throws IOException {
         StringBuilder output = new StringBuilder();
         for (String header : List.of("BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//StudyFlow//Deadline Export//EN",
                 "CALSCALE:GREGORIAN")) {
@@ -33,7 +36,8 @@ public final class CalendarExport {
                 append(output, "DTEND;VALUE=DATE:" + task.getDueDate().plusDays(1)
                         .format(DateTimeFormatter.BASIC_ISO_DATE));
                 append(output, "SUMMARY:" + escape(task.getTitle()));
-                append(output, "DESCRIPTION:" + escape(task.getDescription()));
+                Subject subject = task.getSubjectId() == null ? null : subjects.get(task.getSubjectId());
+                append(output, "DESCRIPTION:" + escape(CalendarDetails.description(task, subject)));
                 append(output, "END:VEVENT");
             }
         }

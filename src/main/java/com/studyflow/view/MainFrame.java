@@ -101,7 +101,8 @@ public final class MainFrame extends JFrame {
         settings = new SettingsPanel(this::selectTheme, enabled -> change(
                 () -> controller.changeNotifications(enabled), "Reminder preference saved.", null), integrations);
         settings.showTheme(theme);
-        calendar = new CalendarPanel(this::openTask);
+        calendar = new CalendarPanel(this::openTask, tasks::openEdit, this::openSubjectEditor,
+                this::openCalendarIntegrations);
         kanban = new KanbanPanel((id, status) -> change(() -> controller.changeStatus(id, status),
                 "Task moved.", null), this::openTask);
         focus = new FocusPanel(session -> change(() -> controller.recordFocus(session.id(), session.taskId(),
@@ -153,16 +154,40 @@ public final class MainFrame extends JFrame {
             }
 
             @Override
-            public void study(String text, String id, com.studyflow.service.StudyAssistant.Mode mode, boolean remote) {
+            public void study(String text, String id, com.studyflow.service.StudyAssistant.Mode mode, boolean remote,
+                              boolean saveHistory) {
                 setBusy(true);
                 showFeedback("Preparing study aid…", false);
-                controller.study(text, id, mode, remote, answer -> {
+                controller.study(text, id, mode, remote, saveHistory, result -> {
                     if (!closing) {
-                        materials.showAnswer(answer);
+                        materials.showAnswer(result.answer());
+                        setBusy(false);
+                        showFeedback(result.historySaveFailed() ? "The output is ready. History could not be saved." : " ",
+                                result.historySaveFailed());
+                    }
+                }, MainFrame.this::showFailure);
+            }
+
+            @Override
+            public void loadHistory() {
+                setBusy(true);
+                controller.loadStudyHistory(entries -> {
+                    if (!closing) {
+                        materials.showHistory(entries);
                         setBusy(false);
                         showFeedback(" ", false);
                     }
-                }, MainFrame.this::showFailure);
+                }, message -> {
+                    if (!closing) {
+                        materials.showHistoryFailure();
+                        showFailure(message);
+                    }
+                });
+            }
+
+            @Override
+            public void clearHistory() {
+                change(controller::clearStudyHistory, "Study history cleared.", () -> materials.showHistory(List.of()));
             }
         });
 
@@ -280,17 +305,17 @@ public final class MainFrame extends JFrame {
         dashboard.showData(records.dashboard());
         tasks.showTasks(records.tasks(), records.subjects());
         subjects.showRecords(records.subjects(), records.workspaces(), records.notes());
-        workspaces.showRecords(records.subjects(), records.workspaces(), records.notes());
+        workspaces.showRecords(records.subjects(), records.workspaces(), records.notes(), records.allTasks());
         notes.showRecords(records.subjects(), records.workspaces(), records.notes());
         taskSubjects = records.subjects();
-        calendar.showTasks(records.allTasks(), taskSubjects);
+        calendar.showTasks(records.allTasks(), taskSubjects, records.linkedCalendarTasks());
         kanban.showTasks(records.allTasks(), taskSubjects);
         focus.showData(records.allTasks(), taskSubjects, records.settings(), records.completedSessions());
         attendance.showData(records.attendance());
         materials.showData(records.materials(), taskSubjects);
         materials.setRemoteAvailable(records.remoteAi());
-        integrations.showData(records.allTasks(), records.googleConfigured(), records.googleConnected(),
-                records.remoteAi(), records.playlists());
+        integrations.showData(records.allTasks(), taskSubjects, records.googleConfigured(), records.googleConnected(),
+                records.linkedCalendarTasks(), records.remoteAi(), records.playlists());
         var summary = records.dashboard();
         analytics.setText("Tasks completed    " + summary.completed() + " / " + summary.total()
                 + "\nTasks pending       " + summary.pending()
@@ -319,6 +344,10 @@ public final class MainFrame extends JFrame {
     }
 
     private void change(Runnable command, String success, Runnable afterSave) {
+        change(command, success, afterSave, this::showFailure);
+    }
+
+    private void change(Runnable command, String success, Runnable afterSave, java.util.function.Consumer<String> failure) {
         if (busy || closing) {
             return;
         }
@@ -334,7 +363,21 @@ public final class MainFrame extends JFrame {
                 showFeedback(success, false);
                 refreshReminders();
             }
-        }, this::showFailure);
+        }, failure);
+    }
+
+    private void changeGoogle(Runnable command, String success) {
+        change(command, success, null, message -> {
+            if (!closing) {
+                // A batch may have linked some events, or lost authorization, before its first failure.
+                controller.load(taskQuery, current -> {
+                    if (!closing) {
+                        showRecords(current);
+                        showFailure(message);
+                    }
+                }, ignored -> showFailure(message));
+            }
+        });
     }
 
     private void showFailure(String message) {
@@ -379,6 +422,15 @@ public final class MainFrame extends JFrame {
         showFeedback("Closing…", false);
     }
 
+    public boolean confirmClose() {
+        if (!subjects.hasUnsavedChanges() && !workspaces.hasUnsavedChanges() && !notes.hasUnsavedChanges()) {
+            return true;
+        }
+        return javax.swing.JOptionPane.showConfirmDialog(this, "Discard unsaved edits and close StudyFlow?",
+                "Unsaved changes", javax.swing.JOptionPane.OK_CANCEL_OPTION,
+                javax.swing.JOptionPane.WARNING_MESSAGE) == javax.swing.JOptionPane.OK_OPTION;
+    }
+
     private void focusSaved(boolean saved) {
         focus.finishSave(saved);
     }
@@ -402,6 +454,18 @@ public final class MainFrame extends JFrame {
             pendingTaskSelection = id;
             tasks.clearFilters();
         }
+    }
+
+    private void openSubjectEditor(String id) {
+        if (!busy && !closing) {
+            navigate(Page.SUBJECTS);
+            subjects.openEdit(id);
+        }
+    }
+
+    private void openCalendarIntegrations() {
+        navigate(Page.SETTINGS);
+        settings.openIntegrations();
     }
 
     private void openResult(SearchPanel.Result result) {
@@ -455,14 +519,22 @@ public final class MainFrame extends JFrame {
     }
 
     private final class IntegrationActions implements IntegrationsPanel.Actions {
-        @Override public void connect() { change(controller::connectGoogle, "Google Calendar connected.", null); }
+        @Override public void connect() {
+            if (!busy && !closing) {
+                changeGoogle(controller::connectGoogle, "Google Calendar connected.");
+                showFeedback("Complete Google sign-in in your browser to finish connecting.", false);
+            }
+        }
         @Override public void disconnect() { change(controller::disconnectGoogle, "Google Calendar disconnected.", null); }
-        @Override public void testGoogle() { change(controller::testGoogle, "Google Calendar connection verified.", null); }
+        @Override public void testGoogle() { changeGoogle(controller::testGoogle, "Google Calendar connection verified."); }
+        @Override public void openGoogleSetup() { change(controller::openGoogleSetup, "Setup guide opened.", null); }
+        @Override public void openGoogleCalendar() { change(controller::openGoogleCalendar, "Google Calendar opened.", null); }
+        @Override public void editSubject(String id) { openSubjectEditor(id); }
         @Override public void sync(List<String> ids) {
-            change(() -> controller.syncGoogle(ids), "Selected deadlines synced.", null);
+            changeGoogle(() -> controller.syncGoogle(ids), "Selected deadlines synced.");
         }
         @Override public void removeEvent(String id) {
-            change(() -> controller.removeEvent(id), "Calendar event removed.", null);
+            changeGoogle(() -> controller.removeEvent(id), "Calendar event removed.");
         }
         @Override public void export(java.nio.file.Path path, List<String> ids) {
             change(() -> controller.exportCalendar(path, ids), "Calendar file exported.", null);
@@ -512,6 +584,15 @@ public final class MainFrame extends JFrame {
     }
 
     private final class AcademicActions implements AcademicPanel.Actions {
+        @Override
+        public void openWorkspaceItem(AcademicPanel.LinkedRecord kind, String id) {
+            switch (kind) {
+                case TASK -> openTask(id);
+                case SUBJECT -> { navigate(Page.SUBJECTS); subjects.selectRecord(id); }
+                case NOTE -> { navigate(Page.NOTES); notes.selectRecord(id); }
+            }
+        }
+
         @Override
         public void createSubject(String name, String code, String description, List<String> tags) {
             change(() -> controller.createSubject(name, code, description, tags), "Subject added.", subjects::finishEdit);

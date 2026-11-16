@@ -2,6 +2,7 @@ package com.studyflow.service;
 
 import com.studyflow.config.StudyFlowContext;
 import com.studyflow.model.StudyMaterial;
+import com.studyflow.service.StudyAssistant.Mode;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -116,6 +117,69 @@ class MaterialLibraryTest {
             assertTrue(Files.isRegularFile(library.openPath(material.id())));
             assertTrue(library.retrieve("", material.id()).isEmpty());
             assertTrue(library.retrieve("nothing", material.id()).isEmpty());
+        }
+    }
+
+    @Test
+    void savesAssistantOutputAndSourcesLocallyAndClearsHistoryWithoutACopy() throws IOException {
+        Path profile = directory.resolve("history-profile");
+        Path original = writePdf("database.pdf", "Transaction isolation controls concurrent access.");
+        String materialId;
+        try (StudyFlowContext context = StudyFlowContext.open(profile)) {
+            materialId = context.materialLibrary().upload(original, "Databases", "", null).id();
+            StudyAssistant assistant = context.studyAssistant();
+            var saved = assistant.run("isolation", materialId, Mode.SHORT_SUMMARY, false, true);
+            assertFalse(saved.historySaveFailed());
+            assertEquals(1, assistant.history().size());
+            assistant.run("transaction", materialId, Mode.KEY_POINTS, false, false);
+            assistant.run("networking", materialId, Mode.KEY_POINTS, false, true);
+            assertEquals(1, assistant.history().size());
+        }
+        Path snapshot = profile.resolve("materials/assistant-history.json");
+        try (StudyFlowContext reopened = StudyFlowContext.open(profile)) {
+            var assistant = reopened.studyAssistant();
+            var saved = assistant.history().getFirst();
+            assertEquals("isolation", saved.topic());
+            assertEquals(materialId, saved.materialId());
+            assertEquals("Databases", saved.materialTitle());
+            assertEquals(Mode.SHORT_SUMMARY.name(), saved.mode());
+            assertTrue(saved.output().contains("concurrent access"));
+            assertEquals("database.pdf", saved.references().getFirst().fileName());
+            assertEquals(1, saved.references().getFirst().page());
+            assertFalse(saved.generated());
+            assistant.run("transaction", materialId, Mode.KEY_POINTS, false, true);
+            assertEquals(List.of("transaction", "isolation"),
+                    assistant.history().stream().map(entry -> entry.topic()).toList());
+            assertTrue(Files.isRegularFile(snapshot));
+            assistant.clearHistory();
+            assertTrue(assistant.history().isEmpty());
+            assertFalse(Files.exists(snapshot));
+        }
+        try (var backups = Files.list(profile.resolve("backups"))) {
+            assertTrue(backups.noneMatch(path -> path.getFileName().toString().startsWith("assistant-history")));
+        }
+        try (StudyFlowContext reopened = StudyFlowContext.open(profile)) {
+            assertTrue(reopened.studyAssistant().history().isEmpty());
+        }
+    }
+
+    @Test
+    void damagedOptionalHistoryDoesNotPreventGeneratingOrClearingOutput() throws IOException {
+        Path profile = directory.resolve("damaged-history-profile");
+        Path original = writePdf("algorithms.pdf", "Binary search uses the sorted order.");
+        try (StudyFlowContext context = StudyFlowContext.open(profile)) {
+            context.materialLibrary().upload(original, "Algorithms", "", null);
+        }
+        Path snapshot = profile.resolve("materials/assistant-history.json");
+        Files.writeString(snapshot, "damaged history");
+        try (StudyFlowContext context = StudyFlowContext.open(profile)) {
+            StudyAssistant assistant = context.studyAssistant();
+            var run = assistant.run("binary", null, Mode.SHORT_SUMMARY, false, true);
+            assertTrue(run.historySaveFailed());
+            assertTrue(run.answer().text().contains("sorted order"));
+            assertEquals("damaged history", Files.readString(snapshot));
+            assistant.clearHistory();
+            assertTrue(assistant.history().isEmpty());
         }
     }
 

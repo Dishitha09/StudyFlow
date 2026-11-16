@@ -271,8 +271,12 @@ public final class TaskPanel extends JPanel {
     private void openEdit() {
         Task task = selectedTask();
         if (task != null) {
-            openForm(task);
+            openEdit(task);
         }
+    }
+
+    public void openEdit(Task task) {
+        openForm(task);
     }
 
     private void openForm(Task task) {

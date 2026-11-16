@@ -50,15 +50,17 @@ The Maven package command builds `target/StudyFlow.jar` with its runtime depende
 StudyFlow opens to the Dashboard. It shows live task totals, today's deadlines, the next seven days of deadlines, and Smart Priority. Use **Complete** on a due-today task to update its status and the dashboard counts.
 
 - **My Tasks** supports general tasks, assignments, exams and study sessions. Select a row to view its details or change its priority or status. Use **Apply** to combine search, filters, date bounds and sorting.
-- **Subjects**, **Workspaces** and **Notes** support adding, editing and deleting records. Link a note to a subject or select multiple subjects for a workspace. A subject with linked records must be unlinked before deletion.
+- **Notes** are for lecture notes, revision and ideas. Choose **Save note** or press **Ctrl+S** to write them to the current profile's `notes/notes.json`. Search saved notes or open the subject a note belongs to.
+- **Workspaces** group subjects for a semester, project, or exam. Pick the included subjects, then use the workspace's **Subjects**, **Tasks**, and **Notes** tabs to browse their records. A subject with linked records must be unlinked before deletion.
 - **Settings** switches between Light and Dark immediately and saves the theme for the next launch.
-- **Calendar**, **Kanban**, **Search**, and **Focus** work from your local tasks and records. Use a task’s context menu to manage recurrence and subtasks.
+- **Calendar** filters deadlines by subject and lets you edit a deadline or its subject. **Kanban** shows progress by status and highlights overdue deadlines. Use a task’s context menu to manage recurrence and subtasks.
+- **Focus** offers presets and custom timer lengths. Use **Ctrl+Space** to start or pause from the Focus panel. Completed focus time can be linked to a task or subject.
 - **Attendance** records class outcomes and corrections, and calculates classes you need to attend or can miss. **Analytics** summarizes recorded task, focus and attendance activity.
-- **Study Materials** imports PDFs. The **Study Assistant** retrieves cached, page-numbered passages and creates local extractive study aids.
+- **Study Materials** imports PDFs. The **Study Assistant** retrieves cached, page-numbered passages and creates study aids. **History** shows saved outputs and citations and can reuse a request. Turn off **Save in local history** before a run to skip saving it, or clear previous entries from **History**.
 
 ## Optional integrations
 
-- **Google Calendar** requires Google Calendar API enabled and a Desktop OAuth application. Set `STUDYFLOW_GOOGLE_CLIENT_ID` and `STUDYFLOW_GOOGLE_CLIENT_SECRET` in the launch environment. Open **Settings → Integrations → Connect** and use the browser consent flow. Select dated tasks and sync them to your primary calendar or export them as an `.ics` file offline. Connect again after restarting StudyFlow. [Google Desktop OAuth setup](https://developers.google.com/identity/protocols/oauth2/native-app)
+- **Google Calendar** is available from **Calendar → Google Calendar**. Export selected deadlines as an `.ics` file without signing in. For live sync, enable the Google Calendar API in a Google Cloud project, create a Desktop app OAuth client, and set `STUDYFLOW_GOOGLE_CLIENT_ID` and `STUDYFLOW_GOOGLE_CLIENT_SECRET` in the launch environment. Choose **Connect Google**, authorize in the browser, then sync selected tasks. StudyFlow marks linked tasks and sends current subject details when you sync again. Reconnect after restarting StudyFlow. [Google Desktop OAuth setup](https://developers.google.com/identity/protocols/oauth2/native-app)
 - **Spotify** stores a saved `https://open.spotify.com` link and opens it using your system browser. Playback belongs to Spotify.
 - **OpenAI** uses `OPENAI_API_KEY` and optionally `STUDYFLOW_OPENAI_MODEL`. Settings can test model access without sending document content. A remote study request sends selected passages only after confirmation. Local study modes work without credentials. [OpenAI Responses API](https://developers.openai.com/api/reference/resources/responses/methods/create)
 

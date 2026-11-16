@@ -1,6 +1,7 @@
 package com.studyflow.integrations;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.studyflow.model.Subject;
 import com.studyflow.model.Task;
 import com.sun.net.httpserver.HttpServer;
 import java.awt.Desktop;
@@ -38,6 +39,7 @@ public final class GoogleCalendar {
     private final SecureRandom random = new SecureRandom();
     private String access;
     private String refresh;
+    private String calendarIdentity;
     private Instant expires = Instant.EPOCH;
 
     public boolean configured() {
@@ -45,8 +47,10 @@ public final class GoogleCalendar {
     }
 
     public boolean connected() {
-        return access != null;
+        return access != null && calendarIdentity != null;
     }
+
+    String connectedCalendarId() { return connected() ? calendarIdentity : null; }
 
     public void connect() throws IOException {
         if (!configured()) {
@@ -89,8 +93,14 @@ public final class GoogleCalendar {
             Desktop.getDesktop().browse(URI.create("https://accounts.google.com/o/oauth2/v2/auth?" + form(arguments)));
             String claim = code.get(90, TimeUnit.SECONDS);
             disconnect();
-            token(Map.of("client_id", clientId, "client_secret", clientSecret, "code", claim,
-                    "redirect_uri", redirect, "code_verifier", verifier, "grant_type", "authorization_code"));
+            try {
+                token(Map.of("client_id", clientId, "client_secret", clientSecret, "code", claim,
+                        "redirect_uri", redirect, "code_verifier", verifier, "grant_type", "authorization_code"));
+                calendarId();
+            } catch (IOException error) {
+                disconnect();
+                throw error;
+            }
         } catch (InterruptedException error) {
             Thread.currentThread().interrupt();
             throw new IOException("Google sign-in was interrupted.", error);
@@ -106,6 +116,7 @@ public final class GoogleCalendar {
     public void disconnect() {
         access = null;
         refresh = null;
+        calendarIdentity = null;
         expires = Instant.EPOCH;
     }
 
@@ -116,22 +127,25 @@ public final class GoogleCalendar {
         if (identity.isBlank()) {
             throw new IOException("Google returned no primary calendar ID.");
         }
-        return HexFormat.of().formatHex(hash(identity));
+        calendarIdentity = HexFormat.of().formatHex(hash(identity));
+        return calendarIdentity;
     }
 
-    public String upsert(Task task) throws IOException {
+    public String upsert(Task task, Subject subject) throws IOException {
         if (task.getDueDate() == null) {
             throw new IllegalArgumentException("Only tasks with deadlines can sync.");
         }
         String id = eventId(task.getId());
-        String payload = mapper.writeValueAsString(Map.of(
-                "id", id, "summary", task.getTitle(), "description", task.getDescription(),
+        Map<String, Object> fields = Map.of(
+                "summary", task.getTitle(), "description", CalendarDetails.description(task, subject),
                 "start", Map.of("date", task.getDueDate().toString()),
-                "end", Map.of("date", task.getDueDate().plusDays(1).toString()),
-                "extendedProperties", Map.of("private", Map.of("studyflowTaskId", task.getId()))));
+                "end", Map.of("date", task.getDueDate().plusDays(1).toString()));
         var response = eventRequest("GET", "/events/" + id, null);
         if (response.statusCode() == 404 || response.statusCode() == 410) {
-            response = eventRequest("POST", "/events", payload);
+            Map<String, Object> created = new HashMap<>(fields);
+            created.put("id", id);
+            created.put("extendedProperties", Map.of("private", Map.of("studyflowTaskId", task.getId())));
+            response = eventRequest("POST", "/events", mapper.writeValueAsString(created));
             if (response.statusCode() != 409) {
                 requireSuccess(response);
                 return id;
@@ -140,7 +154,7 @@ public final class GoogleCalendar {
         }
         requireSuccess(response);
         verifyOwnership(task.getId(), response.body());
-        requireSuccess(eventRequest("PUT", "/events/" + id, payload));
+        requireSuccess(eventRequest("PATCH", "/events/" + id, mapper.writeValueAsString(fields)));
         return id;
     }
 

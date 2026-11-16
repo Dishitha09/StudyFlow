@@ -1,6 +1,7 @@
 package com.studyflow.view.materials;
 
 import com.studyflow.model.StudyMaterial;
+import com.studyflow.model.StudyHistoryEntry;
 import com.studyflow.model.Subject;
 import com.studyflow.service.MaterialLibrary.Passage;
 import com.studyflow.service.StudyAssistant;
@@ -46,11 +47,15 @@ public final class MaterialPanel extends JPanel {
         void search(String text);
         void open(String id);
         void delete(String id);
-        void study(String question, String id, Mode mode, boolean remote);
+        void study(String question, String id, Mode mode, boolean remote, boolean saveHistory);
+        void loadHistory();
+        void clearHistory();
     }
 
     private static final DateTimeFormatter UPLOADED_DATE = DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM)
             .withZone(ZoneId.systemDefault());
+    private static final int ASSISTANT_TAB = 1;
+    private static final int HISTORY_TAB = 2;
     private final Actions actions;
     private final JTabbedPane tabs = new JTabbedPane();
     private final JTextField query = new JTextField();
@@ -67,6 +72,7 @@ public final class MaterialPanel extends JPanel {
     private final JComboBox<Mode> mode = new JComboBox<>(Mode.values());
     private final JComboBox<Scope> scope = new JComboBox<>();
     private final JCheckBox remote = new JCheckBox("Use configured AI provider");
+    private final JCheckBox saveHistory = new JCheckBox("Save in local history", true);
     private final JButton generate = ViewStyle.primary(new JButton("Run assistant"));
     private final JLabel answerHeading = ViewStyle.subheading("Study output");
     private final JTextArea answerText = readOnlyText();
@@ -74,6 +80,7 @@ public final class MaterialPanel extends JPanel {
     private final JList<Passage> sources = new JList<>(sourceRows);
     private final JTextArea passageText = readOnlyText();
     private final JButton sourceOpen = new JButton("Open source PDF");
+    private final StudyHistoryPanel history;
     private List<StudyMaterial> materials = List.of();
     private List<Subject> subjects = List.of();
     private Map<String, String> subjectNames = Map.of();
@@ -84,11 +91,18 @@ public final class MaterialPanel extends JPanel {
     public MaterialPanel(Actions actions) {
         super(new BorderLayout(0, 14));
         this.actions = Objects.requireNonNull(actions, "actions");
+        history = new StudyHistoryPanel(this::reuseRequest, actions::clearHistory);
         setName("materialPanel");
         setBorder(BorderFactory.createEmptyBorder(24, 26, 24, 26));
         add(ViewStyle.heading("Study Materials"), BorderLayout.PAGE_START);
         tabs.addTab("Library", libraryTab());
         tabs.addTab("Study Assistant", assistantTab());
+        tabs.addTab("History", history);
+        tabs.addChangeListener(event -> {
+            if (!busy && tabs.getSelectedIndex() == HISTORY_TAB) {
+                actions.loadHistory();
+            }
+        });
         tabs.setName("materialTabs");
         add(tabs, BorderLayout.CENTER);
         showData(List.of(), List.of());
@@ -166,6 +180,14 @@ public final class MaterialPanel extends JPanel {
         updateControls();
     }
 
+    public void showHistory(List<StudyHistoryEntry> entries) {
+        history.showEntries(entries);
+    }
+
+    public void showHistoryFailure() {
+        history.showLoadFailure();
+    }
+
     public void setRemoteAvailable(boolean available) {
         remoteAvailable = available;
         if (!available) {
@@ -177,6 +199,8 @@ public final class MaterialPanel extends JPanel {
 
     public void setBusy(boolean busy) {
         this.busy = busy;
+        tabs.setEnabledAt(HISTORY_TAB, !busy);
+        history.setBusy(busy);
         updateControls();
     }
 
@@ -222,7 +246,7 @@ public final class MaterialPanel extends JPanel {
         studySelected.setName("materialStudySelected");
         studySelected.addActionListener(event -> {
             selectScope(selectedId());
-            tabs.setSelectedIndex(1);
+            tabs.setSelectedIndex(ASSISTANT_TAB);
             topic.requestFocusInWindow();
         });
         open.setName("materialOpen");
@@ -277,10 +301,15 @@ public final class MaterialPanel extends JPanel {
         selectors.add(scopeLabel);
         selectors.add(scope);
         options.add(selectors, BorderLayout.CENTER);
+        controls.add(options);
+        JPanel preferences = transparent(new FlowLayout(FlowLayout.LEADING, 6, 0));
+        saveHistory.setName("materialSaveHistory");
+        saveHistory.setToolTipText("Save the request and output in this StudyFlow profile.");
+        preferences.add(saveHistory);
         remote.setName("materialUseRemote");
         remote.setVisible(false);
-        options.add(remote, BorderLayout.LINE_END);
-        controls.add(options);
+        preferences.add(remote);
+        controls.add(preferences);
         page.add(controls, BorderLayout.PAGE_START);
 
         JPanel output = transparent(new BorderLayout(0, 5));
@@ -386,7 +415,18 @@ public final class MaterialPanel extends JPanel {
             return;
         }
         Scope selectedScope = (Scope) scope.getSelectedItem();
-        actions.study(question, selectedScope == null ? null : selectedScope.id(), selectedMode, useRemote);
+        actions.study(question, selectedScope == null ? null : selectedScope.id(), selectedMode, useRemote,
+                saveHistory.isSelected());
+    }
+
+    private void reuseRequest(StudyHistoryEntry entry) {
+        topic.setText(entry.topic());
+        mode.setSelectedItem(Mode.valueOf(entry.mode()));
+        selectScope(entry.materialId());
+        remote.setSelected(false);
+        clearAnswer();
+        tabs.setSelectedIndex(ASSISTANT_TAB);
+        topic.requestFocusInWindow();
     }
 
     private void updateSelection() {
@@ -430,6 +470,7 @@ public final class MaterialPanel extends JPanel {
         mode.setEnabled(!busy);
         scope.setEnabled(!busy);
         remote.setEnabled(!busy && remoteAvailable);
+        saveHistory.setEnabled(!busy);
         generate.setEnabled(!busy && !materials.isEmpty());
         sourceOpen.setEnabled(!busy && sources.getSelectedValue() != null);
     }
@@ -459,14 +500,13 @@ public final class MaterialPanel extends JPanel {
         }
     }
 
-    private static String modeLabel(Mode mode) {
+    static String modeLabel(Mode mode) {
         return switch (mode) {
             case SHORT_SUMMARY -> "Short summary";
             case DETAILED_SUMMARY -> "Detailed summary";
             case KEY_POINTS -> "Key points";
             case FORMULAS -> "Formula extraction";
             case REVISION_NOTES -> "Revision notes";
-            case QUESTIONS -> "Practice questions";
             case EXPLAIN -> "Explain a topic";
         };
     }

@@ -101,7 +101,7 @@ public final class Main {
 
                 @Override
                 public void windowClosing(WindowEvent event) {
-                    if (!closing) {
+                    if (!closing && frame.confirmClose()) {
                         closing = true;
                         frame.setClosing();
                         finish(context, worker, finished, frame::dispose, null);

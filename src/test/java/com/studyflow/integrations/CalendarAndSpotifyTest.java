@@ -2,6 +2,7 @@ package com.studyflow.integrations;
 
 import com.studyflow.model.GeneralTask;
 import com.studyflow.model.Priority;
+import com.studyflow.model.Subject;
 import com.studyflow.model.Task;
 import com.studyflow.model.TaskStatus;
 import java.io.IOException;
@@ -12,6 +13,7 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -34,7 +36,7 @@ class CalendarAndSpotifyTest {
                 DEADLINE.minusDays(3), DEADLINE, Priority.HIGH, TaskStatus.TODO);
         Task undated = new GeneralTask("task-2", "Undated", DEADLINE, Priority.LOW);
 
-        CalendarExport.write(calendar, List.of(dated, undated), GENERATED);
+        CalendarExport.write(calendar, List.of(dated, undated), GENERATED, Map.of());
 
         String contents = Files.readString(calendar, StandardCharsets.UTF_8);
         assertTrue(contents.endsWith("END:VCALENDAR\r\n"));
@@ -60,8 +62,25 @@ class CalendarAndSpotifyTest {
         Task undated = new GeneralTask("task-1", "Undated", DEADLINE, Priority.LOW);
 
         assertThrows(IllegalArgumentException.class,
-                () -> CalendarExport.write(calendar, List.of(undated), GENERATED));
+                () -> CalendarExport.write(calendar, List.of(undated), GENERATED, Map.of()));
         assertFalse(Files.exists(calendar));
+    }
+
+    @Test
+    void exportsUpdatedSubjectWithoutChangingTheEventIdentity() throws IOException {
+        Path calendar = directory.resolve("subjects.ics");
+        Subject subject = new Subject("course-1", "Algebra", "MAT101", "", List.of());
+        Task task = new GeneralTask("task-1", "Problem set", "Read chapter 3", subject.getId(),
+                DEADLINE.minusDays(1), DEADLINE, Priority.HIGH, TaskStatus.TODO);
+
+        CalendarExport.write(calendar, List.of(task), GENERATED, Map.of(subject.getId(), subject));
+        assertTrue(Files.readString(calendar).contains("DESCRIPTION:Subject: Algebra (MAT101)"));
+
+        subject.setName("Linear Algebra");
+        CalendarExport.write(calendar, List.of(task), GENERATED, Map.of(subject.getId(), subject));
+        String updated = Files.readString(calendar);
+        assertTrue(updated.contains("UID:task-1@studyflow"));
+        assertTrue(updated.contains("DESCRIPTION:Subject: Linear Algebra (MAT101)\\n\\nRead chapter 3"));
     }
 
     @ParameterizedTest

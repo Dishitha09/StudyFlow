@@ -1,5 +1,6 @@
 package com.studyflow.view.settings;
 
+import com.studyflow.model.Subject;
 import com.studyflow.model.Task;
 import com.studyflow.view.ViewStyle;
 
@@ -15,7 +16,11 @@ import java.time.format.DateTimeFormatter;
 import java.time.format.FormatStyle;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import javax.swing.BorderFactory;
 import javax.swing.DefaultListCellRenderer;
 import javax.swing.DefaultListModel;
@@ -40,6 +45,9 @@ public final class IntegrationsPanel extends JPanel {
         void connect();
         void disconnect();
         void testGoogle();
+        void openGoogleSetup();
+        void openGoogleCalendar();
+        void editSubject(String subjectId);
         void sync(List<String> taskIds);
         void removeEvent(String taskId);
         void export(Path path, List<String> taskIds);
@@ -54,12 +62,17 @@ public final class IntegrationsPanel extends JPanel {
     private final JLabel googleStatus = ViewStyle.muted("Checking configuration…");
     private final JLabel aiStatus = ViewStyle.muted("Checking configuration…");
     private final JLabel spotifyStatus = ViewStyle.muted("Opens saved playlists in Spotify.");
-    private final JButton connect = new JButton("Connect");
+    private final JButton connect = new JButton("Connect Google");
     private final JButton disconnect = new JButton("Disconnect");
     private final JButton testGoogle = new JButton("Test connection");
+    private final JButton setup = new JButton("Setup help");
+    private final JButton openGoogle = new JButton("Open Google Calendar");
     private final JButton sync = ViewStyle.primary(new JButton("Sync selected"));
     private final JButton removeEvent = new JButton("Remove event");
     private final JButton export = new JButton("Export .ics");
+    private final JButton selectDated = new JButton("Select dated tasks");
+    private final JButton editSubject = new JButton("Edit subject");
+    private final JLabel selection = ViewStyle.muted("No dated tasks selected");
     private final JButton testAi = new JButton("Test provider");
     private final DefaultListModel<Task> taskRows = new DefaultListModel<>();
     private final JList<Task> tasks = new JList<>(taskRows);
@@ -73,6 +86,8 @@ public final class IntegrationsPanel extends JPanel {
     private boolean googleConnected;
     private boolean aiConfigured;
     private boolean busy;
+    private Set<String> linkedTasks = Set.of();
+    private Map<String, String> subjects = Map.of();
 
     public IntegrationsPanel(Actions actions) {
         super(new BorderLayout());
@@ -88,23 +103,27 @@ public final class IntegrationsPanel extends JPanel {
         updateControls();
     }
 
-    public void showData(List<Task> items, boolean googleConfigured, boolean googleConnected, boolean aiConfigured,
-                         List<String> playlistLinks) {
+    public void showData(List<Task> items, List<Subject> courses, boolean googleConfigured, boolean googleConnected,
+                         Set<String> linkedTasks, boolean aiConfigured, List<String> playlistLinks) {
         this.googleConfigured = googleConfigured;
         this.googleConnected = googleConnected;
         this.aiConfigured = aiConfigured;
+        this.linkedTasks = Set.copyOf(linkedTasks);
+        subjects = courses.stream().collect(Collectors.toMap(Subject::getId,
+                course -> course.getName() + " (" + course.getSubjectCode() + ")"));
         if (googleConnected) {
-            googleStatus.setText("Connected for this StudyFlow session.");
+            googleStatus.setText("Connected to your primary Google calendar for this StudyFlow session.");
         } else if (googleConfigured) {
-            googleStatus.setText("Configured · Disconnected");
+            googleStatus.setText("Ready to connect. Sign in to Google to sync deadlines.");
         } else {
-            googleStatus.setText("Unconfigured · Set STUDYFLOW_GOOGLE_CLIENT_ID and STUDYFLOW_GOOGLE_CLIENT_SECRET.");
+            googleStatus.setText("Setup required for live sync. You can still export a calendar file.");
         }
         aiStatus.setText(aiConfigured ? "Configured · Test model access."
                 : "Unconfigured · Set OPENAI_API_KEY to enable remote study requests.");
         spotifyStatus.setText(playlistLinks.isEmpty() ? "No playlist links saved."
                 : playlistLinks.size() + (playlistLinks.size() == 1 ? " saved playlist" : " saved playlists"));
-        refreshTasks(items);
+        refreshTasks(items.stream().filter(task -> task.getDueDate() != null || linkedTasks.contains(task.getId()))
+                .sorted().toList());
         refreshPlaylists(playlistLinks);
         updateControls();
     }
@@ -126,14 +145,17 @@ public final class IntegrationsPanel extends JPanel {
         bind(connect, "integrationsGoogleConnect", actions::connect);
         bind(disconnect, "integrationsGoogleDisconnect", actions::disconnect);
         bind(testGoogle, "integrationsGoogleTest", actions::testGoogle);
+        bind(setup, "integrationsGoogleHelp", this::showGoogleSetup);
         connection.add(connect);
         connection.add(disconnect);
         connection.add(testGoogle);
+        connection.add(setup);
         heading.add(connection, BorderLayout.PAGE_END);
         inner.add(heading, BorderLayout.PAGE_START);
 
         JPanel taskArea = transparent(new BorderLayout(0, 5));
-        JLabel hint = ViewStyle.muted("Dated tasks export as all-day events. Sync sends changes from StudyFlow to Google.");
+        JLabel hint = ViewStyle.muted("<html>Sync sends selected task titles, dates, descriptions and subjects to Google as "
+                + "all-day events. Google edits don’t update StudyFlow. Use Export .ics without signing in.</html>");
         hint.setLabelFor(tasks);
         taskArea.add(hint, BorderLayout.PAGE_START);
         tasks.setName("integrationsCalendarTasks");
@@ -146,24 +168,57 @@ public final class IntegrationsPanel extends JPanel {
                     return "";
                 }
                 String date = task.getDueDate() == null ? "No deadline" : DEADLINE.format(task.getDueDate());
-                return task.getTitle() + "  ·  " + date;
+                String subject = task.getSubjectId() == null ? "No subject"
+                        : subjects.getOrDefault(task.getSubjectId(), "No subject");
+                return task.getTitle() + "  ·  " + date + "  ·  " + subject
+                        + (linkedTasks.contains(task.getId()) ? "  ·  Linked" : "");
             }
         });
         tasks.addListSelectionListener(event -> updateControls());
         JScrollPane taskScroll = ViewStyle.scroll(tasks);
         taskScroll.setPreferredSize(new Dimension(0, 108));
         taskArea.add(taskScroll, BorderLayout.CENTER);
+        JPanel picks = actions();
+        bind(selectDated, "integrationsGoogleSelectDated", () -> tasks.setSelectedIndices(
+                IntStream.range(0, taskRows.getSize()).filter(index -> taskRows.get(index).getDueDate() != null).toArray()));
+        bind(editSubject, "integrationsGoogleEditSubject", () -> {
+            Task item = singleTask();
+            if (item != null && item.getSubjectId() != null) {
+                actions.editSubject(item.getSubjectId());
+            }
+        });
+        picks.add(selectDated);
+        picks.add(editSubject);
+        picks.add(selection);
+        taskArea.add(picks, BorderLayout.PAGE_END);
         inner.add(taskArea, BorderLayout.CENTER);
 
         JPanel events = actions();
         bind(sync, "integrationsGoogleSync", () -> actions.sync(datedTaskIds()));
         bind(removeEvent, "integrationsGoogleRemove", this::removeSelectedEvent);
         bind(export, "integrationsCalendarExport", this::exportSelected);
+        bind(openGoogle, "integrationsGoogleOpen", actions::openGoogleCalendar);
         events.add(sync);
         events.add(removeEvent);
         events.add(export);
+        events.add(openGoogle);
         inner.add(events, BorderLayout.PAGE_END);
         return card;
+    }
+
+    private void showGoogleSetup() {
+        String steps = "<html><b>Connect a Google calendar</b><br><br>"
+                + "1. Enable the Google Calendar API in a Google Cloud project.<br>"
+                + "2. Configure OAuth consent and add your account as a test user if needed.<br>"
+                + "3. Create a <b>Desktop app</b> OAuth client. Set its values in your launch environment:<br>"
+                + "&nbsp;&nbsp;&nbsp; STUDYFLOW_GOOGLE_CLIENT_ID and STUDYFLOW_GOOGLE_CLIENT_SECRET.<br>"
+                + "4. Restart StudyFlow, choose <b>Connect Google</b>, and approve in your browser.<br><br>"
+                + "Reconnect after restarting the app. No setup needed to export an .ics file.</html>";
+        int result = JOptionPane.showOptionDialog(this, steps, "Google Calendar setup", JOptionPane.DEFAULT_OPTION,
+                JOptionPane.INFORMATION_MESSAGE, null, new String[]{"Open Google’s setup guide", "Close"}, "Close");
+        if (result == 0) {
+            actions.openGoogleSetup();
+        }
     }
 
     private JPanel spotifyCard() {
@@ -299,14 +354,23 @@ public final class IntegrationsPanel extends JPanel {
     }
 
     private void updateControls() {
-        boolean dated = !datedTaskIds().isEmpty();
+        int datedCount = datedTaskIds().size();
+        boolean dated = datedCount != 0;
+        Task item = singleTask();
         boolean selectedPlaylist = playlists.getSelectedValue() != null;
+        selection.setText(dated ? datedCount + " dated selected" : "No dated tasks selected");
         connect.setEnabled(!busy && googleConfigured && !googleConnected);
         disconnect.setEnabled(!busy && googleConnected);
         testGoogle.setEnabled(!busy && googleConnected);
         sync.setEnabled(!busy && googleConnected && dated);
-        removeEvent.setEnabled(!busy && googleConnected && singleTask() != null);
+        removeEvent.setEnabled(!busy && googleConnected && item != null && linkedTasks.contains(item.getId()));
         export.setEnabled(!busy && dated);
+        selectDated.setEnabled(!busy && IntStream.range(0, taskRows.getSize())
+                .anyMatch(index -> taskRows.get(index).getDueDate() != null));
+        editSubject.setEnabled(!busy && item != null && item.getSubjectId() != null
+                && subjects.containsKey(item.getSubjectId()));
+        setup.setEnabled(!busy);
+        openGoogle.setEnabled(!busy);
         testAi.setEnabled(!busy && aiConfigured);
         playlistUrl.setEnabled(!busy);
         addPlaylist.setEnabled(!busy && !playlistUrl.getText().isBlank());

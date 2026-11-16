@@ -13,10 +13,14 @@ import java.awt.FlowLayout;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
+import java.awt.event.ActionEvent;
+import java.awt.event.InputEvent;
+import java.awt.event.KeyEvent;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
+import javax.swing.AbstractAction;
 import javax.swing.BorderFactory;
 import javax.swing.BoxLayout;
 import javax.swing.DefaultListCellRenderer;
@@ -30,7 +34,10 @@ import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
+import javax.swing.KeyStroke;
 import javax.swing.SwingUtilities;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
 
 /** Converts academic form input into commands while keeping pending edits available for corrections. */
 final class AcademicFormPanel extends JPanel {
@@ -50,7 +57,8 @@ final class AcademicFormPanel extends JPanel {
             return ViewStyle.color("danger");
         }
     };
-    private final JButton save = ViewStyle.primary(new JButton("Save"));
+    private final JLabel draftStatus = ViewStyle.muted("");
+    private final JButton save;
     private final JButton cancel = new JButton("Cancel");
     private final JPanel fields = new JPanel(new GridBagLayout());
     private final List<String> initialTags;
@@ -68,6 +76,7 @@ final class AcademicFormPanel extends JPanel {
         super(new BorderLayout());
         this.kind = kind;
         this.actions = actions;
+        save = ViewStyle.primary(new JButton(kind == AcademicPanel.Kind.SUBJECTS ? "Save" : "Save " + kind.singular));
         id = record == null ? null : record.getId();
         initialTitle = switch (record) {
             case Subject value -> value.getName();
@@ -109,6 +118,7 @@ final class AcademicFormPanel extends JPanel {
         card.add(fieldScroll, BorderLayout.CENTER);
         card.add(createFooter(close), BorderLayout.PAGE_END);
         add(card, BorderLayout.CENTER);
+        configureDraftStatus();
     }
 
     void focusTitle() {
@@ -130,10 +140,15 @@ final class AcademicFormPanel extends JPanel {
         memberships.forEach(value -> value.checkBox().setEnabled(!busy));
         save.setEnabled(!busy);
         cancel.setEnabled(!busy);
+        updateDraftStatus();
+    }
+
+    String recordId() {
+        return id;
     }
 
     boolean confirmDiscard() {
-        if (!hasEdits()) {
+        if (!hasUnsavedChanges()) {
             return true;
         }
         return JOptionPane.showConfirmDialog(this, "Discard your unsaved changes?",
@@ -155,6 +170,7 @@ final class AcademicFormPanel extends JPanel {
             configureMemberships(next, availableSubjects == null ? initialMembers : selectedMembers());
         }
         availableSubjects = next;
+        updateDraftStatus();
     }
 
     private void configureFields() {
@@ -218,6 +234,7 @@ final class AcademicFormPanel extends JPanel {
             checkBox.setOpaque(false);
             checkBox.setSelected(selectedIds.contains(choice.id()));
             checkBox.setEnabled(!busy);
+            checkBox.addItemListener(event -> updateDraftStatus());
             memberships.add(new Membership(choice.id(), checkBox));
             membershipChoices.add(checkBox);
         }
@@ -243,7 +260,48 @@ final class AcademicFormPanel extends JPanel {
         buttons.add(save);
         buttons.add(cancel);
         footer.add(buttons, BorderLayout.LINE_START);
+        if (kind != AcademicPanel.Kind.SUBJECTS) {
+            draftStatus.setName(kind.singular + "DraftStatus");
+            footer.add(draftStatus, BorderLayout.PAGE_END);
+        }
         return footer;
+    }
+
+    private void configureDraftStatus() {
+        if (kind == AcademicPanel.Kind.SUBJECTS) {
+            return;
+        }
+        DocumentListener update = new DocumentListener() {
+            @Override public void insertUpdate(DocumentEvent event) { updateDraftStatus(); }
+            @Override public void removeUpdate(DocumentEvent event) { updateDraftStatus(); }
+            @Override public void changedUpdate(DocumentEvent event) { updateDraftStatus(); }
+        };
+        title.getDocument().addDocumentListener(update);
+        body.getDocument().addDocumentListener(update);
+        tags.getDocument().addDocumentListener(update);
+        subject.addActionListener(event -> updateDraftStatus());
+        getInputMap(WHEN_ANCESTOR_OF_FOCUSED_COMPONENT)
+                .put(KeyStroke.getKeyStroke(KeyEvent.VK_S, InputEvent.CTRL_DOWN_MASK), "saveAcademicRecord");
+        getActionMap().put("saveAcademicRecord", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent event) {
+                save();
+            }
+        });
+        updateDraftStatus();
+    }
+
+    private void updateDraftStatus() {
+        if (kind == AcademicPanel.Kind.SUBJECTS) {
+            return;
+        }
+        if (busy) {
+            draftStatus.setText("Waiting for StudyFlow…");
+        } else if (hasUnsavedChanges() || id == null) {
+            draftStatus.setText("Unsaved · Ctrl+S to save locally");
+        } else {
+            draftStatus.setText("Saved locally");
+        }
     }
 
     private void addField(String text, JComponent field, JComponent input) {
@@ -264,6 +322,9 @@ final class AcademicFormPanel extends JPanel {
     }
 
     private void save() {
+        if (busy) {
+            return;
+        }
         if (title.getText().isBlank()) {
             validation.setText(kind == AcademicPanel.Kind.NOTES ? "Enter a title." : "Enter a name.");
             title.requestFocusInWindow();
@@ -302,7 +363,7 @@ final class AcademicFormPanel extends JPanel {
         }
     }
 
-    private boolean hasEdits() {
+    boolean hasUnsavedChanges() {
         return !title.getText().equals(initialTitle) || !body.getText().equals(initialBody)
                 || !code.getText().equals(initialCode) || !parsedTags().equals(initialTags)
                 || !selectedMembers().equals(initialMembers)
