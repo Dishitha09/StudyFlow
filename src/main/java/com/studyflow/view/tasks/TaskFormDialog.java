@@ -8,6 +8,7 @@ import com.studyflow.model.StudySession;
 import com.studyflow.model.Subject;
 import com.studyflow.model.Task;
 import com.studyflow.model.TaskType;
+import com.studyflow.view.FormDialogs;
 import com.studyflow.view.ViewStyle;
 
 import java.awt.BorderLayout;
@@ -20,12 +21,13 @@ import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.GridLayout;
 import java.awt.Insets;
+import java.awt.Toolkit;
 import java.awt.Window;
-import java.awt.event.ActionEvent;
+import java.awt.event.WindowAdapter;
+import java.awt.event.WindowEvent;
 import java.time.Duration;
 import java.util.List;
 import java.util.function.Consumer;
-import javax.swing.AbstractAction;
 import javax.swing.BorderFactory;
 import javax.swing.JButton;
 import javax.swing.JComboBox;
@@ -36,8 +38,8 @@ import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
-import javax.swing.KeyStroke;
 import javax.swing.WindowConstants;
+import javax.swing.text.JTextComponent;
 
 /** Task editor that keeps user input available until the controller confirms a successful save. */
 final class TaskFormDialog extends JDialog {
@@ -59,6 +61,7 @@ final class TaskFormDialog extends JDialog {
     private final JLabel error = TaskPresentation.literalLabel(" ");
     private final boolean editing;
     private final Consumer<TaskDraft> submit;
+    private final DraftState initial;
     private boolean pending;
 
     TaskFormDialog(Window owner, Task task, List<Subject> subjects, Consumer<TaskDraft> submit) {
@@ -67,24 +70,33 @@ final class TaskFormDialog extends JDialog {
         this.submit = submit;
         setName("taskFormDialog");
         configureInputs(task, subjects);
+        initial = draftState();
         JPanel body = new JPanel(new BorderLayout(0, 18));
         body.setBorder(BorderFactory.createEmptyBorder(20, 24, 16, 24));
         body.add(ViewStyle.heading(getTitle()), BorderLayout.PAGE_START);
         body.add(new JScrollPane(form()), BorderLayout.CENTER);
         body.add(footer(), BorderLayout.PAGE_END);
         setContentPane(body);
-        setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE);
+        setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
         setMinimumSize(new Dimension(440, 400));
-        setSize(580, 608);
+        Insets screenInsets = Toolkit.getDefaultToolkit().getScreenInsets(getGraphicsConfiguration());
+        int workHeight = getGraphicsConfiguration().getBounds().height - screenInsets.top - screenInsets.bottom;
+        setSize(580, Math.max(400, Math.min(608, workHeight - 32)));
         setLocationRelativeTo(owner);
         getRootPane().setDefaultButton(save);
-        getRootPane().getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW).put(KeyStroke.getKeyStroke("ESCAPE"), "cancel");
-        getRootPane().getActionMap().put("cancel", new AbstractAction() {
+        FormDialogs.bindEscape(getRootPane(), JComponent.WHEN_IN_FOCUSED_WINDOW, this::cancel);
+        addWindowListener(new WindowAdapter() {
             @Override
-            public void actionPerformed(ActionEvent event) {
-                if (!pending) {
-                    dispose();
+            public void windowOpened(WindowEvent event) {
+                title.requestFocusInWindow();
+                if (editing) {
+                    title.selectAll();
                 }
+            }
+
+            @Override
+            public void windowClosing(WindowEvent event) {
+                cancel();
             }
         });
     }
@@ -188,7 +200,7 @@ final class TaskFormDialog extends JDialog {
         footer.add(error);
         JPanel actions = new JPanel(new FlowLayout(FlowLayout.TRAILING, 8, 0));
         cancel.setName("taskFormCancel");
-        cancel.addActionListener(event -> dispose());
+        cancel.addActionListener(event -> cancel());
         save.setName("taskFormSave");
         save.addActionListener(event -> save());
         actions.add(cancel);
@@ -198,12 +210,15 @@ final class TaskFormDialog extends JDialog {
     }
 
     private void save() {
+        if (pending) {
+            return;
+        }
         try {
             TaskDraft draft = new TaskDraft(required(title, "Title"), description.getText(),
                     selectedValue(subject), TaskPresentation.optionalDate(deadline.getText(), "Deadline"),
                     selectedValue(priority), taskDetails());
             setPending(true);
-            error.setText("Saving task…");
+            FormDialogs.feedback(error, "Saving task…");
             submit.accept(draft);
         } catch (IllegalArgumentException failure) {
             showFailure(failure.getMessage());
@@ -228,7 +243,6 @@ final class TaskFormDialog extends JDialog {
 
     private void setPending(boolean value) {
         pending = value;
-        setDefaultCloseOperation(value ? WindowConstants.DO_NOTHING_ON_CLOSE : WindowConstants.DISPOSE_ON_CLOSE);
         for (JComponent field : new JComponent[]{title, description, subject, priority, deadline, submission,
                 attachment, examType, preparation, planned, actual, cancel, save}) {
             field.setEnabled(!value);
@@ -240,10 +254,25 @@ final class TaskFormDialog extends JDialog {
         return pending;
     }
 
+    boolean hasUnsavedChanges() {
+        return !initial.equals(draftState());
+    }
+
+    private DraftState draftState() {
+        List<String> text = List.of(title, deadline, description, submission, attachment, examType, preparation,
+                planned, actual).stream().map(JTextComponent::getText).toList();
+        return new DraftState(text, selectedType(), selectedValue(subject), selectedValue(priority));
+    }
+
+    private void cancel() {
+        if (!pending && (!hasUnsavedChanges() || FormDialogs.confirmDiscard(this))) {
+            dispose();
+        }
+    }
+
     void showFailure(String message) {
         setPending(false);
-        error.setText(message);
-        error.setToolTipText(message);
+        FormDialogs.feedback(error, message);
     }
 
     private static <T> T selectedValue(JComboBox<Choice<T>> combo) {
@@ -319,5 +348,8 @@ final class TaskFormDialog extends JDialog {
     }
 
     private record Choice<T>(String label, T value) {
+    }
+
+    private record DraftState(List<String> text, TaskType type, String subjectId, Priority priority) {
     }
 }

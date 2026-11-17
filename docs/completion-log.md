@@ -16,7 +16,9 @@
 - Verification: Windows Java 21 `mvn -B -o clean verify`: **143 tests passed**, no failures/errors/skips. One subsequent test raced 12 concurrent note inserts and checked durable notes and 11 distinct preimages; the final `ProfileRecoveryTest` ran 8/8 separately. Reproduced PDF/restore/optional-save issues before fixes on synthetic profiles and exercised rollback/persistence afterward.
 - Gate: passed. Begin Phase 2. Follow-up: a process kill between filesystem operations is distinct from a reported I/O error; staged PDF bytes are retained for recovery. No live account was used.
 
-## Phase 2 · Desktop design system (in progress)
+## Phase 2 · Desktop design system
 
-- Planned files: `docs/design-system.md`, `ViewStyle`, sidebar and frame shell, shared modal behaviors, `tools/qa/VisualSmoke.java`.
-- Priority: readable resize, keyboard navigation and stable destinations. No changes to record IDs or persistence.
+- Files: `docs/design-system.md`, `ViewStyle`, `SidebarPanel`, `MainFrame`, `FormDialogs`, task/academic/subtask/PDF forms and `tools/qa/VisualSmoke.java`.
+- Why: unified light/dark UI roles, grouped navigation and Ctrl+K search; guarded Escape and window-close behavior keeps unfinished edits accessible. No record format change.
+- Verification: Java 21 clean verify, **144 tests passed**, zero failures/errors/skips. Native Swing probes confirmed all 13 routes, Ctrl+K query focus, dark theme contrast roles, form submission and draft retention. The 192px compact sidebar fixed clipped text; see [compact light](screenshots/completion/phase2-shell-light-1024.png) and [wide dark](screenshots/completion/phase2-shell-dark-1366.png).
+- Gate: passed. Phase 3 replaces dashboard arrangement and improves direct actions.

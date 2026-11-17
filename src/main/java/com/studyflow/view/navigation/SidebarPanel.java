@@ -9,13 +9,16 @@ import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
-import java.awt.GridLayout;
+import java.awt.Rectangle;
 import java.awt.RenderingHints;
+import java.awt.event.FocusAdapter;
+import java.awt.event.FocusEvent;
 import java.awt.geom.Path2D;
 import java.util.EnumMap;
 import java.util.Map;
 import java.util.function.Consumer;
 import javax.swing.BorderFactory;
+import javax.swing.BoxLayout;
 import javax.swing.ButtonGroup;
 import javax.swing.Icon;
 import javax.swing.JLabel;
@@ -23,6 +26,7 @@ import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JToggleButton;
 import javax.swing.SwingConstants;
+import javax.swing.SwingUtilities;
 
 /** Persistent navigation and active-page selection. */
 public final class SidebarPanel extends JPanel {
@@ -61,38 +65,44 @@ public final class SidebarPanel extends JPanel {
     }
 
     private final Map<Page, JToggleButton> buttons = new EnumMap<>(Page.class);
+    private int preferredWidth = 232;
 
     public SidebarPanel(String name, Consumer<Page> navigate) {
-        super(new BorderLayout(0, 24));
+        super(new BorderLayout(0, 12));
         setName("sidebar");
-        setPreferredSize(new Dimension(202, 0));
-        setBorder(BorderFactory.createEmptyBorder(24, 12, 18, 12));
+        setBorder(BorderFactory.createEmptyBorder(18, 12, 14, 12));
         getAccessibleContext().setAccessibleName("StudyFlow navigation");
 
         JLabel brand = new JLabel(name, new NavigationIcon(null), SwingConstants.LEADING);
         brand.setIconTextGap(9);
-        brand.setBorder(BorderFactory.createEmptyBorder(0, 7, 0, 0));
+        brand.setBorder(BorderFactory.createEmptyBorder(0, 5, 0, 0));
         brand.setFont(brand.getFont().deriveFont(Font.BOLD, 21f));
-        add(brand, BorderLayout.PAGE_START);
+        JPanel header = new JPanel(new BorderLayout(0, 12));
+        header.setOpaque(false);
+        header.add(brand, BorderLayout.PAGE_START);
 
-        JPanel items = new JPanel(new GridLayout(0, 1, 0, 3));
+        ButtonGroup selection = new ButtonGroup();
+        JToggleButton search = button(Page.SEARCH, selection, navigate);
+        search.getAccessibleContext().setAccessibleName("Search StudyFlow");
+        search.setToolTipText("Search StudyFlow (Ctrl+K)");
+        search.putClientProperty("JButton.buttonType", null);
+        Dimension searchSize = search.getPreferredSize();
+        search.setPreferredSize(new Dimension(searchSize.width, Math.max(34, searchSize.height)));
+        search.setLayout(new BorderLayout());
+        JLabel shortcut = ViewStyle.muted("Ctrl+K");
+        shortcut.setFont(shortcut.getFont().deriveFont(11f));
+        shortcut.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 2));
+        search.add(shortcut, BorderLayout.LINE_END);
+        header.add(search, BorderLayout.CENTER);
+        add(header, BorderLayout.PAGE_START);
+
+        JPanel items = new JPanel();
         items.setOpaque(false);
-        ButtonGroup group = new ButtonGroup();
-        for (Page page : Page.values()) {
-            JToggleButton button = new JToggleButton(page.title, new NavigationIcon(page));
-            button.setName(page.componentName);
-            button.setHorizontalAlignment(SwingConstants.LEADING);
-            button.setIconTextGap(10);
-            button.putClientProperty("JButton.buttonType", "toolBarButton");
-            button.putClientProperty("JComponent.minimumHeight", 35);
-            button.addActionListener(event -> navigate.accept(page));
-            if (page.availableStage > 0) {
-                button.setToolTipText("Available in Stage " + page.availableStage);
-            }
-            group.add(button);
-            buttons.put(page, button);
-            items.add(button);
-        }
+        items.setLayout(new BoxLayout(items, BoxLayout.Y_AXIS));
+        addGroup(items, "Plan", selection, navigate, Page.DASHBOARD, Page.TASKS, Page.CALENDAR, Page.KANBAN);
+        addGroup(items, "Study", selection, navigate, Page.SUBJECTS, Page.WORKSPACES, Page.NOTES, Page.MATERIALS);
+        addGroup(items, "Track", selection, navigate, Page.FOCUS, Page.ATTENDANCE, Page.ANALYTICS);
+        addGroup(items, "Utilities", selection, navigate, Page.SETTINGS);
         JPanel menu = new JPanel(new BorderLayout());
         menu.setOpaque(false);
         menu.add(items, BorderLayout.PAGE_START);
@@ -104,17 +114,77 @@ public final class SidebarPanel extends JPanel {
         applyColors();
     }
 
+    private void addGroup(JPanel items, String group, ButtonGroup selection, Consumer<Page> navigate, Page... pages) {
+        JLabel label = ViewStyle.muted(group);
+        label.setFont(label.getFont().deriveFont(Font.BOLD, 12f));
+        label.setBorder(BorderFactory.createEmptyBorder(4, 8, 5, 0));
+        label.setAlignmentX(LEFT_ALIGNMENT);
+        items.add(label);
+        for (Page page : pages) {
+            items.add(button(page, selection, navigate));
+        }
+        items.add(javax.swing.Box.createVerticalStrut(ViewStyle.CONTROL_GAP));
+    }
+
+    private JToggleButton button(Page page, ButtonGroup selection, Consumer<Page> navigate) {
+        JToggleButton button = new JToggleButton(page.title, new NavigationIcon(page));
+        button.setName(page.componentName);
+        button.setToolTipText(page.title);
+        button.setHorizontalAlignment(SwingConstants.LEADING);
+        button.setAlignmentX(LEFT_ALIGNMENT);
+        button.setIconTextGap(9);
+        button.putClientProperty("JButton.buttonType", "toolBarButton");
+        button.putClientProperty("JComponent.minimumHeight", 34);
+        button.setMaximumSize(new Dimension(Integer.MAX_VALUE, 42));
+        button.addActionListener(event -> navigate.accept(page));
+        button.addFocusListener(new FocusAdapter() {
+            @Override
+            public void focusGained(FocusEvent event) {
+                reveal(button);
+            }
+        });
+        selection.add(button);
+        buttons.put(page, button);
+        return button;
+    }
+
+    public void fitWidth(int windowWidth) {
+        int width = windowWidth >= 1240 ? 232 : windowWidth >= 1050 ? 206 : 192;
+        if (preferredWidth != width) {
+            preferredWidth = width;
+            revalidate();
+        }
+    }
+
+    @Override
+    public Dimension getPreferredSize() {
+        return new Dimension(preferredWidth, 0);
+    }
+
     public void showPage(Page selected) {
-        buttons.get(selected).setSelected(true);
+        JToggleButton button = buttons.get(selected);
+        button.setSelected(true);
+        SwingUtilities.invokeLater(() -> reveal(button));
+    }
+
+    private static void reveal(JToggleButton button) {
+        button.scrollRectToVisible(new Rectangle(0, 0, button.getWidth(), button.getHeight()));
     }
 
     public void applyColors() {
         setBackground(ViewStyle.color("surface"));
-        String selected = String.format("#%06x", ViewStyle.color("accentSoft").getRGB() & 0xffffff);
-        String accent = String.format("#%06x", ViewStyle.color("accent").getRGB() & 0xffffff);
-        buttons.values().forEach(button -> button.putClientProperty("FlatLaf.style",
-                "arc: 11; toolbar.spacingInsets: 0,0,0,0; toolbar.margin: 4,9,4,7; "
-                        + "toolbar.selectedBackground: " + selected + "; toolbar.selectedForeground: " + accent));
+        setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createMatteBorder(0, 0, 0, 1, ViewStyle.color("border")),
+                BorderFactory.createEmptyBorder(18, 12, 14, 12)));
+        String selected = ViewStyle.hex(ViewStyle.color("accentSoft"));
+        String raised = ViewStyle.hex(ViewStyle.color("raised"));
+        String accent = ViewStyle.hex(ViewStyle.color("accent"));
+        buttons.forEach((page, button) -> button.putClientProperty("FlatLaf.style", page == Page.SEARCH
+                ? "arc: 11; background: " + raised + "; selectedBackground: " + selected
+                + "; selectedForeground: " + accent + "; hoverBackground: " + selected
+                : "arc: 11; toolbar.spacingInsets: 0,0,0,0; toolbar.margin: 5,9,5,7; "
+                + "toolbar.selectedBackground: " + selected + "; toolbar.selectedForeground: " + accent
+                + "; toolbar.hoverBackground: " + raised + "; toolbar.pressedBackground: " + selected));
         repaint();
     }
 
@@ -139,7 +209,7 @@ public final class SidebarPanel extends JPanel {
                 canvas.setColor(component instanceof JToggleButton button && button.isSelected()
                         ? ViewStyle.color("accent") : ViewStyle.color("muted"));
                 if (page == null) {
-                    canvas.setColor(new java.awt.Color(0x4E3CCF));
+                    canvas.setColor(ViewStyle.color("primary"));
                     canvas.fillRoundRect(0, 0, 30, 30, 10, 10);
                     canvas.translate(6, 6);
                     canvas.setColor(java.awt.Color.WHITE);

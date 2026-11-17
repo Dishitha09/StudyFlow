@@ -4,6 +4,7 @@ import com.studyflow.interfaces.Identifiable;
 import com.studyflow.model.Note;
 import com.studyflow.model.Subject;
 import com.studyflow.model.Workspace;
+import com.studyflow.view.FormDialogs;
 import com.studyflow.view.ViewStyle;
 
 import java.awt.BorderLayout;
@@ -29,7 +30,6 @@ import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
 import javax.swing.JComponent;
 import javax.swing.JLabel;
-import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTextArea;
@@ -69,6 +69,7 @@ final class AcademicFormPanel extends JPanel {
     private final String initialSubject;
     private List<SubjectChoice> availableSubjects;
     private boolean busy;
+    private boolean saving;
     private int nextRow;
 
     AcademicFormPanel(AcademicPanel.Kind kind, List<Subject> subjects, Identifiable record,
@@ -118,6 +119,7 @@ final class AcademicFormPanel extends JPanel {
         card.add(fieldScroll, BorderLayout.CENTER);
         card.add(createFooter(close), BorderLayout.PAGE_END);
         add(card, BorderLayout.CENTER);
+        configureShortcuts(close);
         configureDraftStatus();
     }
 
@@ -148,11 +150,7 @@ final class AcademicFormPanel extends JPanel {
     }
 
     boolean confirmDiscard() {
-        if (!hasUnsavedChanges()) {
-            return true;
-        }
-        return JOptionPane.showConfirmDialog(this, "Discard your unsaved changes?",
-                "Unsaved changes", JOptionPane.OK_CANCEL_OPTION, JOptionPane.WARNING_MESSAGE) == JOptionPane.OK_OPTION;
+        return !busy && !saving && (!hasUnsavedChanges() || FormDialogs.confirmDiscard(this));
     }
 
     void showSubjects(List<Subject> subjects) {
@@ -252,11 +250,7 @@ final class AcademicFormPanel extends JPanel {
         save.setName(kind.singular + "Save");
         save.addActionListener(event -> save());
         cancel.setName(kind.singular + "Cancel");
-        cancel.addActionListener(event -> {
-            if (confirmDiscard()) {
-                close.run();
-            }
-        });
+        cancel.addActionListener(event -> cancel(close));
         buttons.add(save);
         buttons.add(cancel);
         footer.add(buttons, BorderLayout.LINE_START);
@@ -265,6 +259,26 @@ final class AcademicFormPanel extends JPanel {
             footer.add(draftStatus, BorderLayout.PAGE_END);
         }
         return footer;
+    }
+
+    private void configureShortcuts(Runnable close) {
+        title.addActionListener(event -> save());
+        code.addActionListener(event -> save());
+        FormDialogs.bindEscape(this, WHEN_ANCESTOR_OF_FOCUSED_COMPONENT, () -> cancel(close));
+        getInputMap(WHEN_ANCESTOR_OF_FOCUSED_COMPONENT)
+                .put(KeyStroke.getKeyStroke(KeyEvent.VK_S, InputEvent.CTRL_DOWN_MASK), "saveAcademicRecord");
+        getActionMap().put("saveAcademicRecord", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent event) {
+                save();
+            }
+        });
+    }
+
+    private void cancel(Runnable close) {
+        if (confirmDiscard()) {
+            close.run();
+        }
     }
 
     private void configureDraftStatus() {
@@ -280,14 +294,6 @@ final class AcademicFormPanel extends JPanel {
         body.getDocument().addDocumentListener(update);
         tags.getDocument().addDocumentListener(update);
         subject.addActionListener(event -> updateDraftStatus());
-        getInputMap(WHEN_ANCESTOR_OF_FOCUSED_COMPONENT)
-                .put(KeyStroke.getKeyStroke(KeyEvent.VK_S, InputEvent.CTRL_DOWN_MASK), "saveAcademicRecord");
-        getActionMap().put("saveAcademicRecord", new AbstractAction() {
-            @Override
-            public void actionPerformed(ActionEvent event) {
-                save();
-            }
-        });
         updateDraftStatus();
     }
 
@@ -322,20 +328,21 @@ final class AcademicFormPanel extends JPanel {
     }
 
     private void save() {
-        if (busy) {
+        if (busy || saving) {
             return;
         }
         if (title.getText().isBlank()) {
-            validation.setText(kind == AcademicPanel.Kind.NOTES ? "Enter a title." : "Enter a name.");
+            FormDialogs.feedback(validation, kind == AcademicPanel.Kind.NOTES ? "Enter a title." : "Enter a name.");
             title.requestFocusInWindow();
             return;
         }
         if (kind == AcademicPanel.Kind.SUBJECTS && code.getText().isBlank()) {
-            validation.setText("Enter a subject code.");
+            FormDialogs.feedback(validation, "Enter a subject code.");
             code.requestFocusInWindow();
             return;
         }
-        validation.setText("");
+        FormDialogs.feedback(validation, "");
+        saving = true;
         String value = title.getText();
         String content = body.getText();
         switch (kind) {
@@ -361,6 +368,15 @@ final class AcademicFormPanel extends JPanel {
                 }
             }
         }
+    }
+
+    boolean failEdit(String message) {
+        if (!saving) {
+            return false;
+        }
+        saving = false;
+        FormDialogs.feedback(validation, message);
+        return true;
     }
 
     boolean hasUnsavedChanges() {

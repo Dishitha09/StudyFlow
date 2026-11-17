@@ -203,6 +203,10 @@ public final class AcademicPanel extends JPanel {
         updateControls();
     }
 
+    public boolean failEdit(String message) {
+        return form != null && form.failEdit(message);
+    }
+
     /** Closes the editor after the parent confirms that a mutation was saved. */
     public void finishEdit() {
         if (form == null) {

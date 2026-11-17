@@ -29,12 +29,22 @@ import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.Rectangle;
 import java.awt.Toolkit;
+import java.awt.event.ActionEvent;
+import java.awt.event.ComponentAdapter;
+import java.awt.event.ComponentEvent;
+import java.awt.event.InputEvent;
+import java.awt.event.KeyEvent;
 import java.util.List;
+import javax.swing.AbstractAction;
 import javax.swing.BorderFactory;
 import javax.swing.JButton;
+import javax.swing.JComponent;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
+import javax.swing.JSeparator;
+import javax.swing.KeyStroke;
+import javax.swing.SwingUtilities;
 
 /** Hosts the active desktop page and coordinates shared interaction state. */
 public final class MainFrame extends JFrame {
@@ -81,14 +91,16 @@ public final class MainFrame extends JFrame {
         this.theme = theme;
         setName("studyFlowWindow");
         setDefaultCloseOperation(DO_NOTHING_ON_CLOSE);
-        setMinimumSize(new Dimension(850, 560));
-        Rectangle screen = getGraphicsConfiguration().getBounds();
-        var screenInsets = Toolkit.getDefaultToolkit().getScreenInsets(getGraphicsConfiguration());
-        setSize(Math.max(850, Math.min(1260, screen.width - screenInsets.left - screenInsets.right - 40)),
-                Math.max(560, Math.min(830, screen.height - screenInsets.top - screenInsets.bottom - 40)));
-        setLocationRelativeTo(null);
+        fitDesktop();
 
         sidebar = new SidebarPanel(config.name(), this::navigate);
+        sidebar.fitWidth(getWidth());
+        addComponentListener(new ComponentAdapter() {
+            @Override
+            public void componentResized(ComponentEvent event) {
+                sidebar.fitWidth(getWidth());
+            }
+        });
         dashboard = new DashboardPanel(this::dashboardAction, id -> change(
                 () -> controller.changeStatus(id, TaskStatus.COMPLETED), "Task completed.", null));
         tasks = new TaskPanel(new TaskActions());
@@ -218,20 +230,10 @@ public final class MainFrame extends JFrame {
         }
         feedback.setName("workspaceStatus");
         feedback.putClientProperty("html.disable", Boolean.TRUE);
-        feedback.setBorder(BorderFactory.createEmptyBorder(5, 27, 8, 20));
         JPanel workspace = new JPanel(new BorderLayout());
         workspace.add(content, BorderLayout.CENTER);
-        JPanel footer = new JPanel(new BorderLayout(12, 0));
-        footer.add(feedback, BorderLayout.CENTER);
-        reminderButton.setName("remindersButton");
-        reminderButton.setVisible(false);
-        reminderText.setEditable(false);
-        reminderText.setWrapStyleWord(true);
-        reminderText.setLineWrap(true);
-        reminderButton.addActionListener(event -> javax.swing.JOptionPane.showMessageDialog(this,
-                new javax.swing.JScrollPane(reminderText), "Task reminders", javax.swing.JOptionPane.INFORMATION_MESSAGE));
-        footer.add(reminderButton, BorderLayout.LINE_END);
-        workspace.add(footer, BorderLayout.PAGE_END);
+        bindGlobalSearch();
+        workspace.add(footer(), BorderLayout.PAGE_END);
         add(sidebar, BorderLayout.LINE_START);
         add(workspace, BorderLayout.CENTER);
         navigate(Page.DASHBOARD);
@@ -246,6 +248,51 @@ public final class MainFrame extends JFrame {
                 reminderTimer.start();
             }
         }, this::showFailure);
+    }
+
+    private void fitDesktop() {
+        Rectangle screen = getGraphicsConfiguration().getBounds();
+        var inset = Toolkit.getDefaultToolkit().getScreenInsets(getGraphicsConfiguration());
+        int width = screen.width - inset.left - inset.right;
+        int height = screen.height - inset.top - inset.bottom;
+        // Window coordinates are logical pixels, so high DPI displays can have less usable space.
+        int minimumWidth = Math.min(850, width);
+        int minimumHeight = Math.min(560, height);
+        setMinimumSize(new Dimension(minimumWidth, minimumHeight));
+        setSize(Math.max(minimumWidth, Math.min(1440, width - 36)),
+                Math.max(minimumHeight, Math.min(900, height - 36)));
+        setLocationRelativeTo(null);
+    }
+
+    private JPanel footer() {
+        JPanel footer = ViewStyle.surface(new BorderLayout());
+        JPanel row = new JPanel(new BorderLayout(ViewStyle.CONTROL_GAP, 0));
+        row.setOpaque(false);
+        row.setBorder(BorderFactory.createEmptyBorder(5, ViewStyle.PAGE_PADDING, 5, 12));
+        row.add(feedback, BorderLayout.CENTER);
+        reminderButton.setName("remindersButton");
+        reminderButton.setVisible(false);
+        reminderText.setEditable(false);
+        reminderText.setWrapStyleWord(true);
+        reminderText.setLineWrap(true);
+        reminderButton.addActionListener(event -> javax.swing.JOptionPane.showMessageDialog(this,
+                new javax.swing.JScrollPane(reminderText), "Task reminders", javax.swing.JOptionPane.INFORMATION_MESSAGE));
+        row.add(reminderButton, BorderLayout.LINE_END);
+        footer.add(new JSeparator(), BorderLayout.PAGE_START);
+        footer.add(row, BorderLayout.CENTER);
+        return footer;
+    }
+
+    private void bindGlobalSearch() {
+        String action = "openGlobalSearch";
+        getRootPane().getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW)
+                .put(KeyStroke.getKeyStroke(KeyEvent.VK_K, InputEvent.CTRL_DOWN_MASK), action);
+        getRootPane().getActionMap().put(action, new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent event) {
+                navigate(Page.SEARCH);
+            }
+        });
     }
 
     private static JPanel availability(String name, int stage) {
@@ -263,8 +310,14 @@ public final class MainFrame extends JFrame {
     }
 
     private void navigate(Page page) {
+        if (closing) {
+            return;
+        }
         sidebar.showPage(page);
         pages.show(content, page.name());
+        if (page == Page.SEARCH) {
+            SwingUtilities.invokeLater(search::focusQuery);
+        }
     }
 
     private void dashboardAction(DashboardPanel.Action action) {
@@ -385,6 +438,9 @@ public final class MainFrame extends JFrame {
             settings.showTheme(theme);
             settings.showNotifications(notificationsEnabled);
             tasks.failEdit(message);
+            subjects.failEdit(message);
+            workspaces.failEdit(message);
+            notes.failEdit(message);
             focusSaved(false);
             setBusy(false);
             showFeedback(message, true);
@@ -423,7 +479,8 @@ public final class MainFrame extends JFrame {
     }
 
     public boolean confirmClose() {
-        if (!subjects.hasUnsavedChanges() && !workspaces.hasUnsavedChanges() && !notes.hasUnsavedChanges()) {
+        if (!tasks.hasUnsavedEdit() && !subjects.hasUnsavedChanges()
+                && !workspaces.hasUnsavedChanges() && !notes.hasUnsavedChanges()) {
             return true;
         }
         return javax.swing.JOptionPane.showConfirmDialog(this, "Discard unsaved edits and close StudyFlow?",

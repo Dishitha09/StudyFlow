@@ -370,10 +370,9 @@ public final class MaterialPanel extends JPanel {
         chooser.setAcceptAllFileFilterUsed(false);
         if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
             Path source = chooser.getSelectedFile().toPath();
-            MaterialUploadForm form = new MaterialUploadForm(source, subjects);
-            if (JOptionPane.showConfirmDialog(this, form, "Upload study material", JOptionPane.OK_CANCEL_OPTION,
-                    JOptionPane.PLAIN_MESSAGE) == JOptionPane.OK_OPTION) {
-                actions.upload(source, form.title(), form.description(), form.subjectId());
+            MaterialUploadForm.Details details = MaterialUploadForm.show(this, source, subjects);
+            if (details != null) {
+                actions.upload(source, details.title(), details.description(), details.subjectId());
             }
         }
     }

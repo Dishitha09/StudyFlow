@@ -320,6 +320,10 @@ public final class TaskPanel extends JPanel {
         return true;
     }
 
+    public boolean hasUnsavedEdit() {
+        return activeForm != null && activeForm.isDisplayable() && activeForm.hasUnsavedChanges();
+    }
+
     public void setBusy(boolean busy) {
         this.busy = busy;
         refreshControls();
