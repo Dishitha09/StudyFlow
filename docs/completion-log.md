@@ -22,3 +22,10 @@
 - Why: unified light/dark UI roles, grouped navigation and Ctrl+K search; guarded Escape and window-close behavior keeps unfinished edits accessible. No record format change.
 - Verification: Java 21 clean verify, **144 tests passed**, zero failures/errors/skips. Native Swing probes confirmed all 13 routes, Ctrl+K query focus, dark theme contrast roles, form submission and draft retention. The 192px compact sidebar fixed clipped text; see [compact light](screenshots/completion/phase2-shell-light-1024.png) and [wide dark](screenshots/completion/phase2-shell-dark-1366.png).
 - Gate: passed. Phase 3 replaces dashboard arrangement and improves direct actions.
+
+## Phase 3 · Dashboard
+
+- Files: `DashboardPanel`, `DashboardTaskList`, `SummaryCard`, `MainFrame`, `StudyFlowController`, `tools/qa/VisualSmoke.java`, and `docs/screenshots/completion/dashboard-*.png`.
+- Why: place Today's Plan and Upcoming together, surface five real counts, open rows directly, keep one page scroll and make empty states actionable. The date tick refreshes task counts after midnight.
+- Verification: **144 tests passed** on a clean Java 21 build. The populated dashboard opened task details, completed a real fixture task, expanded its priority list and kept status/deadline labels readable in a compact frame. Light and dark client captures at 1024×700, 1366×768, 1440×900 and 1920×1080 use a synthetic three-course profile with seven tasks, five focus records and twelve class records. This 125% host limits the native client to 1540×932; 1920×1080 is a logical-size paint of the same running Swing view.
+- Gate: passed. Phase 4 targets cross-page workflows, restart and input feedback.

@@ -84,6 +84,7 @@ public final class MainFrame extends JFrame {
     private boolean error;
     private String pendingTaskSelection;
     private boolean notificationsEnabled;
+    private java.time.LocalDate displayedDate;
 
     public MainFrame(AppConfig config, StudyFlowController controller, Theme theme) {
         super(config.name());
@@ -102,7 +103,7 @@ public final class MainFrame extends JFrame {
             }
         });
         dashboard = new DashboardPanel(this::dashboardAction, id -> change(
-                () -> controller.changeStatus(id, TaskStatus.COMPLETED), "Task completed.", null));
+                () -> controller.changeStatus(id, TaskStatus.COMPLETED), "Task completed.", null), this::openTask);
         tasks = new TaskPanel(new TaskActions());
         tasks.addPlanningAction(this::planTask);
         AcademicActions academicActions = new AcademicActions();
@@ -237,7 +238,7 @@ public final class MainFrame extends JFrame {
         add(sidebar, BorderLayout.LINE_START);
         add(workspace, BorderLayout.CENTER);
         navigate(Page.DASHBOARD);
-        reminderTimer = new javax.swing.Timer(60_000, event -> refreshReminders());
+        reminderTimer = new javax.swing.Timer(60_000, event -> refreshDay());
         setBusy(true);
         controller.load(taskQuery, records -> {
             if (!closing) {
@@ -336,6 +337,8 @@ public final class MainFrame extends JFrame {
             }
             case START_FOCUS -> navigate(Page.FOCUS);
             case OPEN_ATTENDANCE -> navigate(Page.ATTENDANCE);
+            case OPEN_TASKS -> navigate(Page.TASKS);
+            case OPEN_CALENDAR -> navigate(Page.CALENDAR);
         }
     }
 
@@ -346,6 +349,7 @@ public final class MainFrame extends JFrame {
     }
 
     private void showRecords(StudyFlowController.Records records) {
+        displayedDate = records.dashboard().date();
         if (theme != records.theme()) {
             theme = records.theme();
             ViewStyle.applyTheme(theme);
@@ -490,6 +494,25 @@ public final class MainFrame extends JFrame {
 
     private void focusSaved(boolean saved) {
         focus.finishSave(saved);
+    }
+
+    private void refreshDay() {
+        if (busy || closing) {
+            return;
+        }
+        if (controller.currentDate().equals(displayedDate)) {
+            refreshReminders();
+            return;
+        }
+        setBusy(true);
+        controller.load(taskQuery, records -> {
+            if (!closing) {
+                reminderText.setText("");
+                showRecords(records);
+                setBusy(false);
+                refreshReminders();
+            }
+        }, this::showFailure);
     }
 
     private void refreshReminders() {

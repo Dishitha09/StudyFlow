@@ -1,23 +1,17 @@
 package com.studyflow.view.dashboard;
 
-import com.formdev.flatlaf.FlatLaf;
 import com.studyflow.controller.StudyFlowController.DashboardData;
 import com.studyflow.model.Subject;
 import com.studyflow.view.ViewStyle;
 
 import java.awt.BorderLayout;
-import java.awt.Color;
 import java.awt.Component;
 import java.awt.Dimension;
-import java.awt.GradientPaint;
-import java.awt.Graphics;
-import java.awt.Graphics2D;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.GridLayout;
 import java.awt.Insets;
 import java.awt.Rectangle;
-import java.awt.RenderingHints;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.FormatStyle;
@@ -37,23 +31,21 @@ import javax.swing.SwingConstants;
 /** Presents the controller's current academic overview and dispatches dashboard actions. */
 public final class DashboardPanel extends JPanel {
     public enum Action {
-        ADD_TASK, ADD_SUBJECT, ADD_NOTE, START_FOCUS, OPEN_ATTENDANCE
+        ADD_TASK, ADD_SUBJECT, ADD_NOTE, START_FOCUS, OPEN_ATTENDANCE, OPEN_TASKS, OPEN_CALENDAR
     }
 
     private final JLabel date = ViewStyle.muted("");
     private final JLabel greeting = ViewStyle.heading("Welcome to StudyFlow");
     private final JLabel summary = ViewStyle.muted("Loading your study plan…");
-    private final SummaryCard total = new SummaryCard("Total tasks", "dashboardTotal", DashboardIcon.TASKS);
+    private final SummaryCard dueToday = new SummaryCard("Due today", "dashboardDueToday", DashboardIcon.TASKS);
     private final SummaryCard completed = new SummaryCard("Completed", "dashboardCompleted", DashboardIcon.CHECK);
     private final SummaryCard pending = new SummaryCard("Pending", "dashboardPending", DashboardIcon.CLOCK);
     private final SummaryCard overdue = new SummaryCard("Overdue", "dashboardOverdue", DashboardIcon.ALERT);
-    private final SummaryCard assignments = new SummaryCard("Upcoming assignments", "dashboardUpcomingAssignments",
+    private final SummaryCard nextSevenDays = new SummaryCard("Next 7 days", "dashboardNextSevenDays",
             DashboardIcon.CALENDAR);
-    private final JPanel statistics = new JPanel(new GridLayout(0, 5, 12, 12));
-    private final JPanel actions = new JPanel(new GridLayout(0, 5, 10, 10));
+    private final JPanel statistics = new JPanel(new GridLayout(0, 5, 10, 10));
+    private final JPanel actions = new JPanel(new GridLayout(0, 4, 8, 8));
     private final JPanel sections = new JPanel(new GridBagLayout());
-    private final JPanel todayColumn = new JPanel(new BorderLayout());
-    private final JPanel planningColumn = new JPanel(new GridBagLayout());
     private final DashboardTaskList today;
     private final DashboardTaskList upcoming;
     private final DashboardTaskList priority;
@@ -62,33 +54,37 @@ public final class DashboardPanel extends JPanel {
 
     private boolean wide = true;
     private int statColumns = 5;
-    private int actionColumns = 5;
+    private int actionColumns = 4;
 
-    public DashboardPanel(Consumer<Action> navigate, Consumer<String> completeTask) {
+    public DashboardPanel(Consumer<Action> navigate, Consumer<String> completeTask, Consumer<String> openTask) {
         super(new BorderLayout());
         Objects.requireNonNull(navigate, "navigate");
         Objects.requireNonNull(completeTask, "completeTask");
+        Objects.requireNonNull(openTask, "openTask");
         setName("dashboardPanel");
 
-        today = new DashboardTaskList("Today's tasks", "dashboardToday", "Nothing is due today.", 5, completeTask);
+        today = new DashboardTaskList("Today's Plan", "dashboardToday", "Nothing is due today.",
+                "Add a task", () -> navigate.accept(Action.ADD_TASK), 3, openTask, completeTask);
         upcoming = new DashboardTaskList("Upcoming deadlines", "dashboardUpcoming",
-                "No deadlines in the next seven days.", 3, null);
-        priority = new DashboardTaskList("Smart priority", "dashboardSmartPriority",
-                "No pending tasks to prioritize.", 3, null);
+                "No deadlines in the next seven days.", "Open calendar", () -> navigate.accept(Action.OPEN_CALENDAR),
+                3, openTask, null);
+        priority = new DashboardTaskList("Smart Priority", "dashboardSmartPriority",
+                "No pending tasks to prioritize.", "View tasks", () -> navigate.accept(Action.OPEN_TASKS),
+                2, openTask, null);
 
-        JPanel hero = createWelcome();
+        JButton addTask = ViewStyle.primary(action("Add task", "dashboardAddTask", DashboardIcon.PLUS,
+                navigate, Action.ADD_TASK));
+        JPanel hero = createWelcome(addTask);
         statistics.setOpaque(false);
-        for (SummaryCard card : List.of(total, completed, pending, overdue, assignments)) {
+        for (SummaryCard card : List.of(dueToday, completed, overdue, nextSevenDays, pending)) {
             statistics.add(card);
         }
 
         actions.setOpaque(false);
-        JButton addTask = action("Add task", "dashboardAddTask", DashboardIcon.PLUS, navigate, Action.ADD_TASK);
         JButton addSubject = action("Add subject", "dashboardAddSubject", DashboardIcon.BOOK, navigate,
                 Action.ADD_SUBJECT);
         JButton addNote = action("Add note", "dashboardAddNote", DashboardIcon.NOTE, navigate, Action.ADD_NOTE);
         mutationShortcuts = List.of(addTask, addSubject, addNote);
-        actions.add(ViewStyle.primary(addTask));
         actions.add(addSubject);
         actions.add(addNote);
         actions.add(action("Start focus session", "dashboardStartFocus", DashboardIcon.CLOCK, navigate,
@@ -96,22 +92,14 @@ public final class DashboardPanel extends JPanel {
         actions.add(action("Open attendance", "dashboardOpenAttendance", DashboardIcon.ATTENDANCE, navigate,
                 Action.OPEN_ATTENDANCE));
 
-        todayColumn.setOpaque(false);
-        todayColumn.add(today, BorderLayout.PAGE_START);
-        planningColumn.setOpaque(false);
-        addRow(planningColumn, priority, 0, 14);
-        addRow(planningColumn, upcoming, 1, 0);
         sections.setOpaque(false);
         arrangeTaskSections(true);
 
-        addRow(body, hero, 0, 16);
-        addRow(body, statistics, 1, 14);
-        addRow(body, actions, 2, 20);
-        addRow(body, sections, 3, 0);
-        GridBagConstraints filler = new GridBagConstraints();
-        filler.gridy = 4;
-        filler.weighty = 1;
-        body.add(new JPanel(), filler);
+        addRow(body, hero, 0, 12);
+        addRow(body, statistics, 1, 10);
+        addRow(body, actions, 2, 14);
+        addRow(body, sections, 3, 14);
+        addRow(body, priority, 4, 0);
 
         JScrollPane scroll = ViewStyle.scroll(body);
         scroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
@@ -123,13 +111,14 @@ public final class DashboardPanel extends JPanel {
         date.setText(DateTimeFormatter.ofLocalizedDate(FormatStyle.FULL).format(data.date()));
         int hour = LocalTime.now().getHour();
         greeting.setText(hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening");
-        summary.setText(data.today().size() + " due today  ·  " + data.overdue() + " overdue  ·  "
-                + data.pending() + " pending");
-        total.setValue(data.total());
+        summary.setText(data.total() == 0 ? "Add a subject or task to start your study plan."
+                : data.pending() + " open of " + data.total() + " tasks  ·  "
+                + data.upcoming().size() + " deadlines in the next week");
+        dueToday.setValue(data.today().size());
         completed.setValue(data.completed());
         pending.setValue(data.pending());
         overdue.setValue(data.overdue());
-        assignments.setValue(data.upcomingAssignments());
+        nextSevenDays.setValue(data.upcoming().size());
 
         Map<String, String> subjects = data.subjects().stream()
                 .collect(Collectors.toMap(Subject::getId, Subject::getName));
@@ -142,17 +131,25 @@ public final class DashboardPanel extends JPanel {
     public void setBusy(boolean busy) {
         mutationShortcuts.forEach(button -> button.setEnabled(!busy));
         today.setBusy(busy);
+        upcoming.setBusy(busy);
+        priority.setBusy(busy);
     }
 
-    private JPanel createWelcome() {
-        JPanel hero = new WelcomePanel();
-        hero.setLayout(new GridBagLayout());
-        hero.setBorder(BorderFactory.createEmptyBorder(18, 22, 18, 22));
+    private JPanel createWelcome(JButton addTask) {
+        JPanel hero = ViewStyle.card(new BorderLayout(12, 0));
+        hero.setBorder(BorderFactory.createEmptyBorder(12, 17, 12, 17));
+        JPanel copy = new JPanel(new GridBagLayout());
+        copy.setOpaque(false);
         date.setName("dashboardDate");
         summary.setName("dashboardSummary");
-        addRow(hero, date, 0, 5);
-        addRow(hero, greeting, 1, 5);
-        addRow(hero, summary, 2, 0);
+        addRow(copy, greeting, 0, 3);
+        addRow(copy, date, 1, 2);
+        addRow(copy, summary, 2, 0);
+        hero.add(copy, BorderLayout.CENTER);
+        JPanel controls = new JPanel(new GridBagLayout());
+        controls.setOpaque(false);
+        controls.add(addTask);
+        hero.add(controls, BorderLayout.LINE_END);
         return hero;
     }
 
@@ -162,7 +159,7 @@ public final class DashboardPanel extends JPanel {
         button.setName(name);
         button.setHorizontalAlignment(SwingConstants.LEADING);
         button.setIconTextGap(8);
-        button.setMargin(new Insets(8, 10, 8, 10));
+        button.setMargin(new Insets(5, 9, 5, 9));
         button.addActionListener(event -> navigate.accept(action));
         return button;
     }
@@ -172,21 +169,21 @@ public final class DashboardPanel extends JPanel {
             return;
         }
         int width = viewportWidth - body.getInsets().left - body.getInsets().right;
-        int nextStatColumns = width >= 750 ? 5 : width >= 440 ? 3 : 2;
+        int nextStatColumns = width >= 688 ? 5 : width >= 408 ? 3 : 2;
         int actionWidth = 0;
         for (Component action : actions.getComponents()) {
             actionWidth = Math.max(actionWidth, action.getPreferredSize().width);
         }
-        int nextActionColumns = width >= 5 * actionWidth + 40 ? 5 : width >= 3 * actionWidth + 20 ? 3 : 2;
-        boolean nextWide = width >= 720;
+        int nextActionColumns = width >= 4 * actionWidth + 24 ? 4 : 2;
+        boolean nextWide = width >= 650;
         if (statColumns != nextStatColumns) {
             statColumns = nextStatColumns;
-            statistics.setLayout(new GridLayout(0, statColumns, 12, 12));
+            statistics.setLayout(new GridLayout(0, statColumns, 10, 10));
             statistics.revalidate();
         }
         if (actionColumns != nextActionColumns) {
             actionColumns = nextActionColumns;
-            actions.setLayout(new GridLayout(0, actionColumns, 10, 10));
+            actions.setLayout(new GridLayout(0, actionColumns, 8, 8));
             actions.revalidate();
         }
         if (wide != nextWide) {
@@ -200,16 +197,16 @@ public final class DashboardPanel extends JPanel {
         if (sideBySide) {
             GridBagConstraints cell = new GridBagConstraints();
             cell.weightx = 1;
-            cell.fill = GridBagConstraints.HORIZONTAL;
+            cell.fill = GridBagConstraints.BOTH;
             cell.anchor = GridBagConstraints.PAGE_START;
             cell.insets = new Insets(0, 0, 0, 7);
-            sections.add(todayColumn, cell);
+            sections.add(today, cell);
             cell.gridx = 1;
             cell.insets = new Insets(0, 7, 0, 0);
-            sections.add(planningColumn, cell);
+            sections.add(upcoming, cell);
         } else {
-            addRow(sections, todayColumn, 0, 14);
-            addRow(sections, planningColumn, 1, 0);
+            addRow(sections, today, 0, 14);
+            addRow(sections, upcoming, 1, 0);
         }
         sections.revalidate();
         sections.repaint();
@@ -230,7 +227,7 @@ public final class DashboardPanel extends JPanel {
         Body() {
             super(new GridBagLayout());
             setOpaque(false);
-            setBorder(BorderFactory.createEmptyBorder(24, 26, 24, 26));
+            setBorder(BorderFactory.createEmptyBorder(18, ViewStyle.PAGE_PADDING, 20, ViewStyle.PAGE_PADDING));
         }
 
         @Override
@@ -259,27 +256,4 @@ public final class DashboardPanel extends JPanel {
         }
     }
 
-    /** Paints the welcome section in colors suited to the active FlatLaf theme. */
-    private static final class WelcomePanel extends JPanel {
-        WelcomePanel() {
-            setOpaque(false);
-        }
-
-        @Override
-        protected void paintComponent(Graphics graphics) {
-            Graphics2D canvas = (Graphics2D) graphics.create();
-            try {
-                canvas.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                Color start = FlatLaf.isLafDark() ? new Color(0x262039) : new Color(0xF1ECFF);
-                Color end = FlatLaf.isLafDark() ? new Color(0x222735) : new Color(0xEEF3FF);
-                canvas.setPaint(new GradientPaint(0, 0, start, Math.max(1, getWidth()), getHeight(), end));
-                canvas.fillRoundRect(0, 0, getWidth(), getHeight(), 20, 20);
-                canvas.setColor(ViewStyle.color("border"));
-                canvas.drawRoundRect(0, 0, getWidth() - 1, getHeight() - 1, 20, 20);
-            } finally {
-                canvas.dispose();
-            }
-            super.paintComponent(graphics);
-        }
-    }
 }

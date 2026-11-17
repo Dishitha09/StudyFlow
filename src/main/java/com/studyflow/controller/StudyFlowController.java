@@ -62,6 +62,10 @@ public final class StudyFlowController {
         submit(() -> snapshot(query), success, failure);
     }
 
+    public LocalDate currentDate() {
+        return LocalDate.now(clock);
+    }
+
     public void query(TaskQuery query, Consumer<List<Task>> success, Consumer<String> failure) {
         submit(() -> taskRows(query), success, failure);
     }
@@ -324,7 +328,7 @@ public final class StudyFlowController {
 
     private Records snapshot(TaskQuery query) {
         TaskManager tasks = context.taskManager();
-        LocalDate today = LocalDate.now(clock);
+        LocalDate today = currentDate();
         List<Task> all = tasks.findAll();
         List<Subject> subjects = context.subjectManager().findAll();
         List<Task> upcoming = tasks.upcoming();

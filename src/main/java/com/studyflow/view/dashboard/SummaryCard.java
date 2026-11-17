@@ -19,13 +19,13 @@ final class SummaryCard extends JPanel {
         super(new BorderLayout());
         this.title = title;
         setOpaque(false);
-        JPanel card = ViewStyle.card(new BorderLayout(4, 4));
-        card.setBorder(BorderFactory.createEmptyBorder(12, 14, 12, 14));
+        JPanel card = ViewStyle.card(new BorderLayout(4, 1));
+        card.setBorder(BorderFactory.createEmptyBorder(9, 12, 10, 12));
 
         JLabel caption = ViewStyle.muted(title.equals("Upcoming assignments")
                 ? "<html>Upcoming<br>assignments</html>" : title);
         caption.setToolTipText(title);
-        value.setFont(value.getFont().deriveFont(Font.BOLD, 28f));
+        value.setFont(value.getFont().deriveFont(Font.BOLD, 26f));
         value.setName(componentName);
         value.getAccessibleContext().setAccessibleName(title);
 
@@ -34,7 +34,11 @@ final class SummaryCard extends JPanel {
         JLabel iconLabel = new JLabel(icon, SwingConstants.TRAILING) {
             @Override
             public Color getForeground() {
-                return ViewStyle.color(icon == DashboardIcon.ALERT ? "danger" : "accent");
+                return ViewStyle.color(switch (icon) {
+                    case ALERT -> "danger";
+                    case CHECK -> "success";
+                    default -> "accent";
+                });
             }
         };
         header.add(value, BorderLayout.CENTER);

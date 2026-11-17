@@ -190,15 +190,15 @@ class VisualSmoke {
         Dimension nativeSize = content.getSize();
         boolean logicalOnly = nativeSize.width != width || nativeSize.height != height;
         SidebarPanel sidebar = (SidebarPanel) find(frame, "sidebar");
+        if (sidebar != null) sidebar.fitWidth(width);
         // Windows may clamp a top-level frame to this monitor's work area. Paint the same live
         // page at the requested logical size without changing the user's display settings.
         if (logicalOnly) {
             System.out.printf("Native client %dx%d; painting logical client %dx%d%n",
                     nativeSize.width, nativeSize.height, width, height);
-            if (sidebar != null) sidebar.fitWidth(width);
             content.setSize(width, height);
-            layout(content);
         }
+        layout(content);
         var image = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
         Graphics2D canvas = image.createGraphics();
         try {
