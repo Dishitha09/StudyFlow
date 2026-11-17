@@ -85,6 +85,7 @@ public final class MainFrame extends JFrame {
     private String pendingTaskSelection;
     private boolean notificationsEnabled;
     private java.time.LocalDate displayedDate;
+    private java.util.concurrent.atomic.AtomicBoolean cancelPdfImport;
 
     public MainFrame(AppConfig config, StudyFlowController controller, Theme theme) {
         super(config.name());
@@ -141,15 +142,33 @@ public final class MainFrame extends JFrame {
         materials = new MaterialPanel(new MaterialPanel.Actions() {
             @Override
             public void upload(java.nio.file.Path source, String title, String description, String subjectId) {
-                change(() -> controller.uploadMaterial(source, title, description, subjectId), "PDF added.", null);
+                if (busy || closing) return;
+                var cancelled = new java.util.concurrent.atomic.AtomicBoolean();
+                var latest = new java.util.concurrent.atomic.AtomicReference<
+                        com.studyflow.service.MaterialLibrary.ImportProgress>();
+                cancelPdfImport = cancelled;
+                materials.beginImport(() -> cancelled.set(true));
+                change(() -> controller.uploadMaterial(source, title, description, subjectId, cancelled::get,
+                        progress -> {
+                            if (latest.getAndSet(progress) == null) SwingUtilities.invokeLater(() -> {
+                                var current = latest.getAndSet(null);
+                                if (!closing && current != null) materials.showImportProgress(current);
+                            });
+                        }), "PDF added.", MainFrame.this::finishPdfImport, message -> {
+                            finishPdfImport();
+                            if ("PDF import cancelled.".equals(message)) {
+                                setBusy(false);
+                                showFeedback("PDF import cancelled. Nothing was added.", false);
+                            } else showFailure(message);
+                        });
             }
 
             @Override
             public void search(String text) {
                 setBusy(true);
-                controller.searchMaterials(text, results -> {
+                controller.searchPdfLibrary(text, results -> {
                     if (!closing) {
-                        materials.showMatches(results);
+                        materials.showPdfSearch(text, results.matches(), results.evidence());
                         setBusy(false);
                     }
                 }, MainFrame.this::showFailure);
@@ -167,11 +186,23 @@ public final class MainFrame extends JFrame {
             }
 
             @Override
-            public void study(String text, String id, com.studyflow.service.StudyAssistant.Mode mode, boolean remote,
-                              boolean saveHistory) {
+            public void prepareStudy(com.studyflow.service.StudyAssistant.Request request) {
                 setBusy(true);
-                showFeedback("Preparing study aid…", false);
-                controller.study(text, id, mode, remote, saveHistory, result -> {
+                showFeedback("Finding source passages…", false);
+                controller.prepareStudy(request, prepared -> {
+                    if (!closing) {
+                        setBusy(false);
+                        showFeedback(" ", false);
+                        materials.reviewPrepared(prepared);
+                    }
+                }, MainFrame.this::showFailure);
+            }
+
+            @Override
+            public void runStudy(com.studyflow.service.StudyAssistant.Prepared prepared) {
+                setBusy(true);
+                showFeedback("Preparing study output…", false);
+                controller.runStudy(prepared, result -> {
                     if (!closing) {
                         materials.showAnswer(result.answer());
                         setBusy(false);
@@ -201,6 +232,18 @@ public final class MainFrame extends JFrame {
             @Override
             public void clearHistory() {
                 change(controller::clearStudyHistory, "Study history cleared.", () -> materials.showHistory(List.of()));
+            }
+
+            @Override
+            public void deleteHistory(String entryId) {
+                setBusy(true);
+                controller.deleteStudyHistory(entryId, entries -> {
+                    if (!closing) {
+                        materials.showHistory(entries);
+                        setBusy(false);
+                        showFeedback("Saved study output deleted.", false);
+                    }
+                }, MainFrame.this::showFailure);
             }
         });
 
@@ -477,6 +520,7 @@ public final class MainFrame extends JFrame {
     public void setClosing() {
         closing = true;
         reminderTimer.stop();
+        if (cancelPdfImport != null) cancelPdfImport.set(true);
         focus.stop();
         setBusy(true);
         showFeedback("Closing…", false);
@@ -500,6 +544,11 @@ public final class MainFrame extends JFrame {
 
     private void focusSaved(boolean saved) {
         focus.finishSave(saved);
+    }
+
+    private void finishPdfImport() {
+        cancelPdfImport = null;
+        materials.finishImport();
     }
 
     private void refreshDay() {

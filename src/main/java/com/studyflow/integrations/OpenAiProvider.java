@@ -2,6 +2,7 @@ package com.studyflow.integrations;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.studyflow.interfaces.AIProvider;
 
 import java.io.IOException;
@@ -66,24 +67,54 @@ public final class OpenAiProvider implements AIProvider {
 
     @Override
     public String generate(String prompt) throws IOException {
-        if (prompt == null || prompt.isBlank()) {
+        return generate(null, prompt, null);
+    }
+
+    @Override
+    public String generate(String instructions, String input) throws IOException {
+        return generate(instructions, input, null);
+    }
+
+    @Override
+    public String generateStructured(String prompt, String schemaName, String schema) throws IOException {
+        return generateStructured(null, prompt, schemaName, schema);
+    }
+
+    @Override
+    public String generateStructured(String instructions, String input, String schemaName, String schema)
+            throws IOException {
+        ObjectNode format = JSON.createObjectNode();
+        format.put("type", "json_schema");
+        format.put("name", schemaName);
+        format.put("strict", true);
+        format.set("schema", JSON.readTree(schema));
+        return generate(instructions, input, format);
+    }
+
+    private String generate(String instructions, String input, ObjectNode format) throws IOException {
+        if (input == null || input.isBlank()) {
             throw new IllegalArgumentException("Enter a question or choose study material.");
         }
-        String payload = JSON.createObjectNode()
+        ObjectNode payload = JSON.createObjectNode()
                 .put("model", model)
-                .put("input", prompt)
+                .put("input", input)
                 .put("store", false)
-                .put("max_output_tokens", 2200)
-                .toString();
+                .put("max_output_tokens", format == null ? 2200 : 6000);
+        if (instructions != null) {
+            payload.put("instructions", instructions);
+        }
+        if (format != null) {
+            payload.putObject("text").set("format", format);
+        }
         HttpRequest request = request("responses", REQUEST_TIMEOUT)
                 .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(payload))
+                .POST(HttpRequest.BodyPublishers.ofString(payload.toString()))
                 .build();
         JsonNode result = send(request);
         if (!"completed".equals(result.path("status").asText())) {
             throw new IOException("OpenAI did not complete the response. Try a narrower topic or use local study mode.");
         }
-        return readText(result);
+        return readText(result, format != null);
     }
 
     private HttpRequest.Builder request(String path, Duration timeout) throws IOException {
@@ -140,7 +171,7 @@ public final class OpenAiProvider implements AIProvider {
 
     record Exchange(int statusCode, String body) {}
 
-    private static String readText(JsonNode result) throws IOException {
+    private static String readText(JsonNode result, boolean structured) throws IOException {
         StringJoiner parts = new StringJoiner("\n");
         boolean refused = false;
         for (JsonNode item : result.path("output")) {
@@ -157,11 +188,11 @@ public final class OpenAiProvider implements AIProvider {
                 }
             }
         }
+        if (refused && (structured || parts.length() == 0)) {
+            throw new IOException("OpenAI declined to generate an answer. Local study passages are still available.");
+        }
         if (parts.length() > 0) {
             return parts.toString();
-        }
-        if (refused) {
-            throw new IOException("OpenAI declined to generate an answer. Local study passages are still available.");
         }
         throw new IOException("OpenAI returned a response without study text.");
     }

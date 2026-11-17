@@ -36,3 +36,11 @@
 - Why: retain and correct attendance input inline; warn on closing with an unfinished focus interval; describe PDF search coverage. Preserve TaskManager as the owner of task state.
 - Verification: **145 tests passed** on a clean Java 21 build. A native Swing probe used three temporary profiles for: assignment creation, search/linking and completion across shared views; workspace membership and note creation/edit/search; attendance add/correct/target and focus start/pause/resume/finish. All three reopened with saved records. The attendance probe rejected an invalid date without dropping the edit. [Attendance](screenshots/completion/attendance-light-1366x768.png) and [Focus](screenshots/completion/focus-dark-1366x768.png) use synthetic records.
 - Gate: passed. Advanced PDF retrieval and study questions/history are checked in Phase 5.
+
+## Phase 5 · PDF library and Study Assistant
+
+- Files: `MaterialLibrary`, `PdfPassageIndex`, `PassageRanker`, `StudyAssistant`, `StudyQuestionFormat`, `QuestionSet`, `StudyHistoryEntry`, `AIProvider`, `OpenAiProvider`, material/history views, shared desktop wiring and targeted tests.
+- Why: use Unicode whole-word relevance and overlapping source excerpts; recover a missing or stale index; allow progress/cancel before committing an import. Keep offline tools extractive. Use a frozen, reviewable request for remote AI, validated structured question/answer data and exact source IDs. History can remove individual rows.
+- Verification: **170 tests passed**, no failures/errors/skips. PDF tests cover rankings, real source pages, OCR empty states, cache repair and cancellation. Mock provider tests cover all three question types, malformed results, refused outputs, answer and citation validation, and no duplicate history on retry. A native consent probe verified Cancel sends nothing and Send transmits the reviewed request. The packaged desktop probe imported a two-page fixture, found page 2, created offline revision notes and opened History in a reopened profile.
+- Screenshots: [Text matches](screenshots/completion/pdf-text-matches.png), [Local assistant](screenshots/completion/study-assistant-local.png), [Reopened history](screenshots/completion/study-history-reopened.png).
+- Gate: passed. The configured live AI service was not exercised. Phase 6 adds visual analytics using saved records.

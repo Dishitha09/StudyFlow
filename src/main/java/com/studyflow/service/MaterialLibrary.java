@@ -5,7 +5,6 @@ import com.studyflow.model.StudyMaterial;
 import com.studyflow.utils.IdGenerator;
 import com.studyflow.utils.SearchText;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.NoSuchFileException;
@@ -14,24 +13,17 @@ import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.time.Clock;
 import java.util.ArrayList;
-import java.util.Base64;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.NoSuchElementException;
-import java.util.Set;
+import java.util.Objects;
+import java.util.function.BooleanSupplier;
+import java.util.function.Consumer;
 import java.util.function.Predicate;
-import java.util.regex.Pattern;
-import org.apache.pdfbox.Loader;
-import org.apache.pdfbox.text.PDFTextStripper;
 
 /** Imports managed PDFs and searches their cached, page-numbered passages. */
 public final class MaterialLibrary {
-    private static final int CHUNK = 900;
-    private static final long MAX_PDF_BYTES = 100 * 1024 * 1024;
-    private static final Set<String> COMMON = Set.of("a", "an", "and", "are", "explain", "for", "how", "in",
-            "is", "of", "on", "the", "to", "what", "with");
-    private static final Pattern TERMS = Pattern.compile("[\\p{L}\\p{N}]+");
+    private static final int COPY_BUFFER_SIZE = 64 * 1024;
 
     private final Path files;
     private final Path index;
@@ -49,30 +41,92 @@ public final class MaterialLibrary {
     }
 
     public StudyMaterial upload(Path source, String title, String description, String subjectId) throws IOException {
-        if (!Files.isRegularFile(source) || !source.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".pdf")) {
+        return upload(source, title, description, subjectId, () -> false, progress -> { });
+    }
+
+    /** Checks cancellation during copying and extraction, and once more before storing the new record. */
+    public StudyMaterial upload(Path source, String title, String description, String subjectId,
+                                BooleanSupplier cancelled, Consumer<ImportProgress> progress) throws IOException {
+        Objects.requireNonNull(cancelled, "Cancellation check");
+        Objects.requireNonNull(progress, "Import progress listener");
+        checkCancelled(cancelled);
+        if (source == null || !Files.isRegularFile(source)
+                || !source.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".pdf")) {
             throw new IllegalArgumentException("Choose a PDF file.");
         }
-        if (Files.size(source) > MAX_PDF_BYTES) {
-            throw new IllegalArgumentException("Choose a PDF smaller than 100 MB.");
-        }
+        long bytes = Files.size(source);
+        PdfPassageIndex.checkPdfSize(bytes);
         StudyMaterial material = new StudyMaterial(IdGenerator.next(), title, source.getFileName().toString(),
                 description, subjectId, clock.instant());
-        if (material.subjectId() != null && !subjectExists.test(material.subjectId())) {
-            throw new IllegalArgumentException("Choose an existing subject.");
-        }
+        requireExistingSubject(material);
         Files.createDirectories(files);
         Files.createDirectories(index);
         Path pdf = pdfPath(material.id());
         Path cache = cachePath(material.id());
+        if (Files.exists(pdf, LinkOption.NOFOLLOW_LINKS) || Files.exists(cache, LinkOption.NOFOLLOW_LINKS)) {
+            throw new IOException("Could not reserve a new material file. Try importing again.");
+        }
+        Path pending = Files.createTempFile(files, material.id() + ".", ".importing");
+        boolean cached = false;
+        boolean moved = false;
         try {
-            Files.copy(source, pdf);
-            extract(pdf, cache);
+            copyPdf(source, pending, (int) bytes, cancelled, progress);
+            PdfPassageIndex.rebuild(pending, cache, PdfPassageIndex.stamp(pending), cancelled,
+                    (completed, total) -> progress.accept(new ImportProgress(ImportStage.EXTRACTING, completed, total)));
+            cached = true;
+            progress.accept(new ImportProgress(ImportStage.SAVING, 0, 0));
+            checkCancelled(cancelled);
+            requireExistingSubject(material);
+            Files.move(pending, pdf, StandardCopyOption.ATOMIC_MOVE);
+            moved = true;
             materials.insert(material);
             return material;
         } catch (IOException | RuntimeException failure) {
-            clean(cache, failure);
-            clean(pdf, failure);
+            if (cached) {
+                clean(cache, failure);
+            }
+            clean(moved ? pdf : pending, failure);
             throw failure;
+        }
+    }
+
+    private void requireExistingSubject(StudyMaterial material) {
+        if (material.subjectId() != null && !subjectExists.test(material.subjectId())) {
+            throw new IllegalArgumentException("Choose an existing subject.");
+        }
+    }
+
+    private static void copyPdf(Path source, Path pending, int expected, BooleanSupplier cancelled,
+                                Consumer<ImportProgress> progress) throws IOException {
+        progress.accept(new ImportProgress(ImportStage.COPYING, 0, expected));
+        checkCancelled(cancelled);
+        int copied = 0;
+        int lastReported = 0;
+        try (var input = Files.newInputStream(source); var output = Files.newOutputStream(pending)) {
+            byte[] buffer = new byte[COPY_BUFFER_SIZE];
+            int count;
+            while ((count = input.read(buffer)) >= 0) {
+                checkCancelled(cancelled);
+                copied += count;
+                PdfPassageIndex.checkPdfSize(copied);
+                if (copied > expected) {
+                    throw new IOException("The selected file changed while it was being copied. Try again.");
+                }
+                output.write(buffer, 0, count);
+                if (copied == expected || copied - lastReported >= Math.max(COPY_BUFFER_SIZE, expected / 100)) {
+                    progress.accept(new ImportProgress(ImportStage.COPYING, copied, expected));
+                    lastReported = copied;
+                }
+            }
+        }
+        if (copied != expected) {
+            throw new IOException("The selected file changed while it was being copied. Try again.");
+        }
+    }
+
+    static void checkCancelled(BooleanSupplier cancelled) throws ImportCancelledException {
+        if (Thread.currentThread().isInterrupted() || cancelled.getAsBoolean()) {
+            throw new ImportCancelledException();
         }
     }
 
@@ -92,35 +146,61 @@ public final class MaterialLibrary {
         return findAll().stream().anyMatch(material -> subjectId.equals(material.subjectId()));
     }
 
-    public synchronized List<Passage> retrieve(String query, String materialId) throws IOException {
-        List<String> words = TERMS.matcher(query == null ? "" : query.toLowerCase(Locale.ROOT)).results()
-                .map(result -> result.group()).filter(word -> !COMMON.contains(word)).distinct().toList();
+    public List<Passage> retrieve(String query, String materialId) throws IOException {
+        return searchPassages(query, materialId).passages();
+    }
+
+    public synchronized RetrievalResult searchPassages(String query, String materialId) {
         List<StudyMaterial> candidates = materialId == null ? findAll() : List.of(require(materialId));
-        List<ScoredPassage> matches = new ArrayList<>();
+        PassageRanker best = new PassageRanker(query);
+        List<RetrievalWarning> warnings = new ArrayList<>();
         for (StudyMaterial item : candidates) {
-            try (var reader = Files.newBufferedReader(cachePath(item.id()), StandardCharsets.UTF_8)) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    int separator = line.indexOf('\t');
-                    int page;
-                    String body;
-                    try {
-                        page = Integer.parseInt(line.substring(0, separator));
-                        body = new String(Base64.getDecoder().decode(line.substring(separator + 1)),
-                                StandardCharsets.UTF_8);
-                    } catch (IllegalArgumentException | IndexOutOfBoundsException error) {
-                        throw new IOException("Cannot read the cached text for " + item.fileName(), error);
-                    }
-                    String normalized = body.toLowerCase(Locale.ROOT);
-                    long score = words.stream().filter(normalized::contains).count();
-                    if (score > 0 || words.isEmpty()) {
-                        matches.add(new ScoredPassage(score, new Passage(item.id(), item.fileName(), page, body)));
-                    }
+            try {
+                LoadedIndex result = loadIndex(item, query);
+                best.merge(result.matches());
+                if (result.originalMissing()) {
+                    warnings.add(warning(item, "The managed PDF is missing. Saved excerpts can still be read."));
                 }
+                if (!result.hasText()) {
+                    warnings.add(warning(item, "No searchable text was found. If this is a scan, import a copy with OCR text."));
+                }
+            } catch (IOException | SecurityException failure) {
+                warnings.add(warning(item, "Searchable text is unavailable. Check that the managed PDF is present and readable."));
             }
         }
-        return matches.stream().sorted(Comparator.comparingLong(ScoredPassage::score).reversed())
-                .limit(12).map(ScoredPassage::passage).toList();
+        return new RetrievalResult(best.matches().stream().map(PassageRanker.Match::passage).toList(), warnings);
+    }
+
+    /** Presents only an excerpt from the source text, centered on a matched keyword when possible. */
+    public static String preview(Passage passage, String query) {
+        return new PassageRanker(query).preview(passage.text());
+    }
+
+    private LoadedIndex loadIndex(StudyMaterial item, String query) throws IOException {
+        Path pdf = pdfPath(item.id());
+        Path cache = cachePath(item.id());
+        PdfPassageIndex.SourceStamp stamp = PdfPassageIndex.stamp(pdf);
+        try {
+            return readIndex(item, query, cache, stamp);
+        } catch (IOException failure) {
+            if (stamp == null) {
+                throw failure;
+            }
+            PdfPassageIndex.rebuild(pdf, cache, stamp, () -> false, (completed, total) -> { });
+            return readIndex(item, query, cache, stamp);
+        }
+    }
+
+    private static LoadedIndex readIndex(StudyMaterial item, String query, Path cache,
+                                         PdfPassageIndex.SourceStamp stamp) throws IOException {
+        PassageRanker ranker = new PassageRanker(query);
+        boolean hasText = PdfPassageIndex.read(cache, stamp,
+                (page, text) -> ranker.accept(new Passage(item.id(), item.fileName(), page, text)));
+        return new LoadedIndex(ranker, hasText, stamp == null);
+    }
+
+    private static RetrievalWarning warning(StudyMaterial item, String message) {
+        return new RetrievalWarning(item.id(), item.fileName(), message);
     }
 
     public synchronized Path openPath(String id) throws IOException {
@@ -208,38 +288,6 @@ public final class MaterialLibrary {
         }
     }
 
-    private static void extract(Path pdf, Path cache) throws IOException {
-        try (var document = Loader.loadPDF(pdf.toFile());
-             var output = Files.newBufferedWriter(cache, StandardCharsets.UTF_8)) {
-            PDFTextStripper extractor = new PDFTextStripper();
-            for (int page = 1; page <= document.getNumberOfPages(); page++) {
-                extractor.setStartPage(page);
-                extractor.setEndPage(page);
-                String text = extractor.getText(document).strip();
-                for (int offset = 0; offset < text.length();) {
-                    int end = Math.min(text.length(), offset + CHUNK);
-                    if (end < text.length()) {
-                        int boundary = text.lastIndexOf(' ', end);
-                        if (boundary > offset + CHUNK / 2) {
-                            end = boundary;
-                        } else if (Character.isHighSurrogate(text.charAt(end - 1))) {
-                            end--;
-                        }
-                    }
-                    String chunk = text.substring(offset, end).strip();
-                    if (!chunk.isEmpty()) {
-                        output.write(page + "\t" + Base64.getEncoder()
-                                .encodeToString(chunk.getBytes(StandardCharsets.UTF_8)));
-                        output.newLine();
-                    }
-                    offset = end;
-                }
-            }
-        } catch (IOException error) {
-            throw new IOException("Could not extract PDF text. The file may be damaged or password protected.", error);
-        }
-    }
-
     private static void clean(Path path, Throwable failure) {
         if (path == null) {
             return;
@@ -252,5 +300,24 @@ public final class MaterialLibrary {
     }
 
     public record Passage(String materialId, String fileName, int page, String text) { }
-    private record ScoredPassage(long score, Passage passage) { }
+
+    public enum ImportStage { COPYING, EXTRACTING, SAVING }
+
+    /** Copy progress reports bytes. Extraction reports pages. Saving has no determinate length. */
+    public record ImportProgress(ImportStage stage, int completed, int total) { }
+
+    public static final class ImportCancelledException extends IOException {
+        private ImportCancelledException() { super("PDF import cancelled."); }
+    }
+
+    public record RetrievalWarning(String materialId, String fileName, String message) { }
+
+    public record RetrievalResult(List<Passage> passages, List<RetrievalWarning> warnings) {
+        public RetrievalResult {
+            passages = List.copyOf(passages);
+            warnings = List.copyOf(warnings);
+        }
+    }
+
+    private record LoadedIndex(PassageRanker matches, boolean hasText, boolean originalMissing) { }
 }

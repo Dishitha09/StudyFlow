@@ -4,12 +4,15 @@ import com.studyflow.controller.StudyFlowController;
 import com.studyflow.model.Assignment;
 import com.studyflow.model.TaskStatus;
 import com.studyflow.model.TaskType;
+import com.studyflow.service.MaterialLibrary;
+import com.studyflow.service.StudyAssistant;
 import com.studyflow.view.MainFrame;
 import com.studyflow.view.ViewStyle;
 import java.awt.Component;
 import java.awt.Container;
 import java.awt.GraphicsEnvironment;
 import java.awt.Window;
+import java.awt.image.BufferedImage;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Clock;
@@ -18,17 +21,25 @@ import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import javax.imageio.ImageIO;
 import javax.swing.AbstractButton;
 import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
 import javax.swing.JLabel;
 import javax.swing.JDialog;
+import javax.swing.JFileChooser;
 import javax.swing.JList;
 import javax.swing.JSpinner;
+import javax.swing.JTabbedPane;
 import javax.swing.JTable;
 import javax.swing.JTextArea;
 import javax.swing.SwingUtilities;
 import javax.swing.text.JTextComponent;
+import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.pdmodel.PDPage;
+import org.apache.pdfbox.pdmodel.PDPageContentStream;
+import org.apache.pdfbox.pdmodel.font.PDType1Font;
+import org.apache.pdfbox.pdmodel.font.Standard14Fonts;
 
 /** Desktop workflow probe. All writes go to temporary synthetic profiles. */
 class WorkflowSmoke {
@@ -43,6 +54,9 @@ class WorkflowSmoke {
         workspaceJourney(Files.createTempDirectory("studyflow-workspace-qa-"));
         trackingJourney(Files.createTempDirectory("studyflow-tracking-qa-"));
         System.out.println("Three separate desktop create/edit/reopen scenarios passed.");
+        Path screenshots = args.length == 1 ? Files.createDirectories(Path.of(args[0])) : null;
+        studyJourney(Files.createTempDirectory("studyflow-material-qa-"), screenshots);
+        System.out.println("PDF upload, exact page search, offline revision, and History reopen passed.");
     }
 
     private static void assignmentJourney(Path profile) throws Exception {
@@ -200,6 +214,75 @@ class WorkflowSmoke {
         }
     }
 
+    private static void studyJourney(Path profile, Path screenshots) throws Exception {
+        Path original = Files.createTempDirectory("studyflow-pdf-source-").resolve("algorithms-handout.pdf");
+        try (PDDocument doc = new PDDocument()) {
+            for (String line : List.of("Oscillations, potential and kinetic energy.",
+                    "Graph traversals use adjacent vertices. Breadth first search uses a queue.")) {
+                PDPage page = new PDPage();
+                doc.addPage(page);
+                try (PDPageContentStream content = new PDPageContentStream(doc, page)) {
+                    content.beginText();
+                    content.setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA), 12);
+                    content.newLineAtOffset(40, 740);
+                    content.showText(line);
+                    content.endText();
+                }
+            }
+            doc.save(original.toFile());
+        }
+        try (Session app = new Session(profile)) {
+            app.act(() -> app.click("navMaterials"));
+            SwingUtilities.invokeLater(() -> app.click("materialUpload"));
+            app.act(() -> {
+                var chooser = (JFileChooser) app.visible("materialPdfChooser");
+                chooser.setSelectedFile(original.toFile());
+                chooser.approveSelection();
+            });
+            app.act(() -> {
+                app.text("materialUploadTitle", "Algorithms handout");
+                app.submitDialog("materialUploadTitle");
+            });
+            require(app.context.materialLibrary().findAll().size() == 1, "File imported in the desktop");
+            app.act(() -> {
+                app.text("materialSearchQuery", "graph traversals");
+                app.click("materialSearch");
+            });
+            app.act(() -> {
+                var results = (JList<?>) app.visible("pdfPassageMatches");
+                require(results.getSelectedValue() instanceof MaterialLibrary.Passage passage && passage.page() == 2,
+                        "Search selected the controlled PDF's page 2");
+                require(((JTextArea) app.visible("pdfPassagePreview")).getText().contains("Breadth first"),
+                        "Preview shows the original matching text");
+                require(app.visible("pdfPassageOpen").isEnabled(), "Source action is available");
+            });
+            if (screenshots != null) app.capture(screenshots.resolve("pdf-text-matches.png"));
+            app.act(() -> {
+                ((JTabbedPane) app.visible("materialTabs")).setSelectedIndex(1);
+                app.text("materialTopic", "graph traversals");
+                app.combo("materialMode").setSelectedItem(StudyAssistant.Mode.REVISION_NOTES);
+                app.click("materialGenerate");
+            });
+            app.act(() -> { }); // Prepare and local execute are separate worker jobs.
+            app.act(() -> {
+                var sources = (JList<?>) app.visible("materialSources");
+                require(sources.getModel().getElementAt(0) instanceof MaterialLibrary.Passage passage
+                        && passage.page() == 2, "Assistant preserved the actual source page");
+                require(!((JTextArea) app.visible("materialAnswer")).getText().isBlank(), "Local revision output");
+            });
+            if (screenshots != null) app.capture(screenshots.resolve("study-assistant-local.png"));
+        }
+        try (Session reopened = new Session(profile)) {
+            reopened.act(() -> {
+                reopened.click("navMaterials");
+                ((JTabbedPane) reopened.visible("materialTabs")).setSelectedIndex(2);
+            });
+            reopened.act(() -> require(((JList<?>) reopened.visible("materialHistoryList")).getModel().getSize() == 1,
+                    "Saved assistant history reopened"));
+            if (screenshots != null) reopened.capture(screenshots.resolve("study-history-reopened.png"));
+        }
+    }
+
     private static void require(boolean condition, String action) {
         if (!condition) throw new AssertionError(action);
     }
@@ -304,6 +387,18 @@ class WorkflowSmoke {
         void submitDialog(String field) {
             var dialog = (JDialog) SwingUtilities.getWindowAncestor(visible(field));
             dialog.getRootPane().getDefaultButton().doClick(0);
+        }
+
+        void capture(Path destination) throws Exception {
+            var image = new java.util.concurrent.atomic.AtomicReference<BufferedImage>();
+            act(() -> {
+                var page = frame.getContentPane();
+                var bitmap = new BufferedImage(page.getWidth(), page.getHeight(), BufferedImage.TYPE_INT_RGB);
+                var g = bitmap.createGraphics();
+                try { page.printAll(g); } finally { g.dispose(); }
+                image.set(bitmap);
+            });
+            ImageIO.write(image.get(), "png", destination.toFile());
         }
 
         @Override public void close() throws Exception {

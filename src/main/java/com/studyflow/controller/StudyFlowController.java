@@ -23,6 +23,7 @@ import com.studyflow.service.AttendanceService;
 import com.studyflow.service.TaskManager;
 import com.studyflow.service.ReminderService;
 import com.studyflow.service.StudyAssistant;
+import com.studyflow.service.MaterialLibrary;
 import com.studyflow.strategy.SortByCreationDate;
 import com.studyflow.strategy.SortByDeadline;
 import com.studyflow.strategy.SortByPriority;
@@ -79,6 +80,19 @@ public final class StudyFlowController {
         submit(() -> context.materialLibrary().search(text), success, failure);
     }
 
+    public void searchPdfLibrary(String text, Consumer<PdfSearch> success, Consumer<String> failure) {
+        submit(() -> {
+            MaterialLibrary library = context.materialLibrary();
+            if (text.isBlank()) return new PdfSearch(library.findAll(),
+                    new MaterialLibrary.RetrievalResult(List.of(), List.of()));
+            var evidence = library.searchPassages(text, null);
+            Set<String> found = new HashSet<>();
+            evidence.passages().forEach(page -> found.add(page.materialId()));
+            library.search(text).forEach(pdf -> found.add(pdf.id()));
+            return new PdfSearch(library.findAll().stream().filter(pdf -> found.contains(pdf.id())).toList(), evidence);
+        }, success, failure);
+    }
+
     public void searchAll(String text, Consumer<SearchData> success, Consumer<String> failure) {
         submit(() -> {
             var academic = context.searchService().search(text);
@@ -88,11 +102,22 @@ public final class StudyFlowController {
         }, success, failure);
     }
 
-    public void study(String text, String id, StudyAssistant.Mode mode, boolean remote, boolean saveHistory,
-                      Consumer<StudyAssistant.RunResult> success, Consumer<String> failure) {
+    public void prepareStudy(StudyAssistant.Request request, Consumer<StudyAssistant.Prepared> success,
+                             Consumer<String> failure) {
         submit(() -> {
             try {
-                return context.studyAssistant().run(text, id, mode, remote, saveHistory);
+                return context.studyAssistant().prepare(request);
+            } catch (IOException error) {
+                throw new UncheckedIOException(error.getMessage(), error);
+            }
+        }, success, failure);
+    }
+
+    public void runStudy(StudyAssistant.Prepared prepared, Consumer<StudyAssistant.RunResult> success,
+                         Consumer<String> failure) {
+        submit(() -> {
+            try {
+                return context.studyAssistant().execute(prepared);
             } catch (IOException error) {
                 throw new UncheckedIOException(error.getMessage(), error);
             }
@@ -107,9 +132,19 @@ public final class StudyFlowController {
         context.studyAssistant().clearHistory();
     }
 
+    public void deleteStudyHistory(String id, Consumer<List<StudyHistoryEntry>> success, Consumer<String> failure) {
+        submit(() -> context.studyAssistant().deleteHistory(id), success, failure);
+    }
+
     public void uploadMaterial(Path source, String title, String description, String subjectId) {
+        uploadMaterial(source, title, description, subjectId, () -> false, ignored -> { });
+    }
+
+    public void uploadMaterial(Path source, String title, String description, String subjectId,
+                               java.util.function.BooleanSupplier cancelled,
+                               Consumer<MaterialLibrary.ImportProgress> progress) {
         try {
-            context.materialLibrary().upload(source, title, description, subjectId);
+            context.materialLibrary().upload(source, title, description, subjectId, cancelled, progress);
         } catch (IOException error) {
             throw new UncheckedIOException(error.getMessage(), error);
         }
@@ -427,4 +462,6 @@ public final class StudyFlowController {
 
     public record SearchData(com.studyflow.service.SearchService.SearchResults records,
                              List<StudyMaterial> materials, String materialsWarning) { }
+
+    public record PdfSearch(List<StudyMaterial> matches, MaterialLibrary.RetrievalResult evidence) { }
 }
