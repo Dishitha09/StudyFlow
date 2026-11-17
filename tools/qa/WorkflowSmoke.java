@@ -99,14 +99,29 @@ class WorkflowSmoke {
             });
             require(app.context.taskManager().findById(taskId).orElseThrow().getStatus() == TaskStatus.COMPLETED,
                     "Dashboard completion persisted");
+            app.act(() -> app.click("navAnalytics"));
             app.act(() -> {
-                app.click("navAnalytics");
                 Component old = find(app.frame, "analyticsTotals");
                 if (old instanceof JTextArea area) {
                     require(area.getText().contains("1 / 1"), "Analytics reflected completion");
                 } else {
                     app.visible("analyticsPanel");
                     require(textPresent(app.frame, "1 of 1"), "Analytics reflected completion");
+                }
+            });
+            if (app.frame != null) app.act(() -> {
+                if (find(app.frame, "analyticsPeriod") != null) {
+                    app.combo("analyticsPeriod").setSelectedIndex(3);
+                    app.text("analyticsStart", TODAY.minusDays(1).toString());
+                    app.text("analyticsEnd", TODAY.minusDays(1).toString());
+                    app.click("analyticsApply");
+                }
+            });
+            app.act(() -> {
+                if (find(app.frame, "analyticsPeriod") != null) {
+                    require(textPresent(app.frame, "No task completions with known dates"),
+                            "Excluded the completion from a different date");
+                    require(textPresent(app.frame, "1 of 1"), "Inventory stayed current across date filters");
                 }
             });
         }

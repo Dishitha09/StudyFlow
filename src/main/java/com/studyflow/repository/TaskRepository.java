@@ -1,5 +1,6 @@
 package com.studyflow.repository;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import com.studyflow.model.Assignment;
@@ -14,6 +15,7 @@ import com.studyflow.utils.ValidationUtils;
 
 import java.nio.file.Path;
 import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.HashSet;
 import java.util.List;
@@ -46,12 +48,13 @@ public final class TaskRepository extends JsonCollectionRepository<Task, TaskRep
     }
 
     record TaskRecord(String id, String title, String description, String subjectId, LocalDate createdDate,
-                      LocalDate dueDate, Priority priority, TaskStatus status, Recurrence recurrence,
+                      LocalDate dueDate, Priority priority, TaskStatus status,
+                      @JsonInclude(JsonInclude.Include.NON_NULL) Instant completedAt, Recurrence recurrence,
                       Boolean recurrenceAdvanced, List<TaskRecord> subtasks, TaskDetails details) {
         static TaskRecord from(Task task) {
             return new TaskRecord(task.getId(), task.getTitle(), task.getDescription(), task.getSubjectId(),
                     task.getCreatedDate(), task.getDueDate(), task.getPriority(), task.getStatus(),
-                    task.getRecurrence(), task.hasAdvancedRecurrence(),
+                    task.getCompletedAt(), task.getRecurrence(), task.hasAdvancedRecurrence(),
                     task.getSubtasks().stream().map(TaskRecord::from).toList(), TaskDetails.from(task));
         }
 
@@ -93,7 +96,7 @@ public final class TaskRepository extends JsonCollectionRepository<Task, TaskRep
         @Override
         public Task create(TaskRecord record) {
             return new GeneralTask(record.id(), record.title(), record.description(), record.subjectId(),
-                    record.createdDate(), record.dueDate(), record.priority(), record.status());
+                    record.createdDate(), record.dueDate(), record.priority(), record.status(), record.completedAt());
         }
     }
 
@@ -102,7 +105,7 @@ public final class TaskRepository extends JsonCollectionRepository<Task, TaskRep
         public Task create(TaskRecord record) {
             return new Assignment(record.id(), record.title(), record.description(), record.subjectId(),
                     record.createdDate(), record.dueDate(), record.priority(), record.status(),
-                    submissionType, attachmentPath);
+                    submissionType, attachmentPath, record.completedAt());
         }
     }
 
@@ -110,7 +113,8 @@ public final class TaskRepository extends JsonCollectionRepository<Task, TaskRep
         @Override
         public Task create(TaskRecord record) {
             return new Exam(record.id(), record.title(), record.description(), record.subjectId(),
-                    record.createdDate(), record.dueDate(), record.priority(), record.status(), examType, preparationStatus);
+                    record.createdDate(), record.dueDate(), record.priority(), record.status(),
+                    examType, preparationStatus, record.completedAt());
         }
     }
 
@@ -119,7 +123,7 @@ public final class TaskRepository extends JsonCollectionRepository<Task, TaskRep
         public Task create(TaskRecord record) {
             return new StudySession(record.id(), record.title(), record.description(), record.subjectId(),
                     record.createdDate(), record.dueDate(), record.priority(), record.status(),
-                    plannedDuration, actualDuration);
+                    plannedDuration, actualDuration, record.completedAt());
         }
     }
 }

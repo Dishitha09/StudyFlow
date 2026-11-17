@@ -12,15 +12,18 @@ import com.studyflow.strategy.TaskSortStrategy;
 import com.studyflow.utils.ValidationUtils;
 
 import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.ConcurrentModificationException;
 import java.util.EnumMap;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Consumer;
@@ -91,7 +94,7 @@ public final class TaskManager {
         Task edited = current.copy();
         editor.accept(edited);
         requireCurrentSnapshot(baseline);
-        requireUnchangedLifecycle(current.getStatus(), current.hasAdvancedRecurrence(), edited);
+        requireUnchangedLifecycle(current, edited);
         replace(index, edited);
         return edited.copy();
     }
@@ -121,11 +124,12 @@ public final class TaskManager {
             return current.copy();
         }
         Task edited = current.copy();
-        edited.updateStatus(status);
+        Instant changedAt = clock.instant();
+        edited.updateStatus(status, changedAt);
         List<Task> candidate = new ArrayList<>(tasks);
         if (status == TaskStatus.COMPLETED && edited.getRecurrence() != Recurrence.NONE
                 && !edited.hasAdvancedRecurrence()) {
-            candidate.add(TaskFactory.nextOccurrence(edited, LocalDate.now(clock)));
+            candidate.add(TaskFactory.nextOccurrence(edited, LocalDate.ofInstant(changedAt, clock.getZone())));
             edited.markRecurrenceAdvanced();
         }
         candidate.set(index, edited);
@@ -185,10 +189,9 @@ public final class TaskManager {
         List<Task> baseline = tasks;
         Task root = baseline.get(index).copy();
         requireEditedSubtask(root, subtaskId, child -> {
-            TaskStatus previousStatus = child.getStatus();
-            boolean previouslyAdvanced = child.hasAdvancedRecurrence();
+            Task before = child.copy();
             editor.accept(child);
-            requireUnchangedLifecycle(previousStatus, previouslyAdvanced, child);
+            requireUnchangedLifecycle(before, child);
         });
         requireCurrentSnapshot(baseline);
         replace(index, root);
@@ -207,7 +210,7 @@ public final class TaskManager {
         if (child.getStatus() == status) {
             return child;
         }
-        requireEditedSubtask(root, subtaskId, edited -> edited.updateStatus(status));
+        requireEditedSubtask(root, subtaskId, edited -> edited.updateStatus(status, clock.instant()));
         replace(index, root);
         return requireSubtask(root, subtaskId);
     }
@@ -325,10 +328,19 @@ public final class TaskManager {
         }
     }
 
-    private static void requireUnchangedLifecycle(TaskStatus previousStatus, boolean previouslyAdvanced, Task task) {
-        if (task.getStatus() != previousStatus || task.hasAdvancedRecurrence() != previouslyAdvanced) {
-            throw new IllegalArgumentException("Use a status operation to change the task lifecycle.");
-        }
+    private static void requireUnchangedLifecycle(Task before, Task after) {
+        Map<String, Task> original = new HashMap<>();
+        tree(before).forEach(task -> original.put(task.getId(), task));
+        tree(after).forEach(task -> {
+            Task previous = original.get(task.getId());
+            boolean changed = previous == null ? task.getCompletedAt() != null
+                    : task.getStatus() != previous.getStatus()
+                    || task.hasAdvancedRecurrence() != previous.hasAdvancedRecurrence()
+                    || !Objects.equals(task.getCompletedAt(), previous.getCompletedAt());
+            if (changed) {
+                throw new IllegalArgumentException("Use a status operation to change the task lifecycle.");
+            }
+        });
     }
 
     private static void requireEditedSubtask(Task root, String id, Consumer<Task> editor) {

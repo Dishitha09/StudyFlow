@@ -2,6 +2,7 @@ package com.studyflow.model;
 
 import com.studyflow.utils.ValidationUtils;
 
+import java.time.Instant;
 import java.time.LocalDate;
 
 /** Coursework with a submission method and optional attachment path metadata. */
@@ -12,7 +13,14 @@ public final class Assignment extends Task {
     public Assignment(String id, String title, String description, String subjectId, LocalDate createdDate,
                       LocalDate dueDate, Priority priority, TaskStatus status, String submissionType,
                       String attachmentPath) {
-        super(id, title, description, subjectId, createdDate, dueDate, priority, status);
+        this(id, title, description, subjectId, createdDate, dueDate, priority, status, submissionType,
+                attachmentPath, null);
+    }
+
+    public Assignment(String id, String title, String description, String subjectId, LocalDate createdDate,
+                      LocalDate dueDate, Priority priority, TaskStatus status, String submissionType,
+                      String attachmentPath, Instant completedAt) {
+        super(id, title, description, subjectId, createdDate, dueDate, priority, status, completedAt);
         setSubmissionType(submissionType);
         setAttachmentPath(attachmentPath);
     }

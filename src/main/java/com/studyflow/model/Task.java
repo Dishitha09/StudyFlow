@@ -6,6 +6,7 @@ import com.studyflow.interfaces.Searchable;
 import com.studyflow.utils.SearchText;
 import com.studyflow.utils.ValidationUtils;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -31,12 +32,18 @@ public abstract class Task implements Identifiable, Comparable<Task>, Prioritiza
     private LocalDate dueDate;
     private Priority priority;
     private TaskStatus status;
+    private Instant completedAt;
     private Recurrence recurrence = Recurrence.NONE;
     private boolean recurrenceAdvanced;
     private final List<Task> subtasks = new ArrayList<>();
 
     protected Task(String id, String title, String description, String subjectId, LocalDate createdDate,
                    LocalDate dueDate, Priority priority, TaskStatus status) {
+        this(id, title, description, subjectId, createdDate, dueDate, priority, status, null);
+    }
+
+    protected Task(String id, String title, String description, String subjectId, LocalDate createdDate,
+                   LocalDate dueDate, Priority priority, TaskStatus status, Instant completedAt) {
         this.id = ValidationUtils.requiredText(id, "Task ID");
         setTitle(title);
         setDescription(description);
@@ -45,11 +52,12 @@ public abstract class Task implements Identifiable, Comparable<Task>, Prioritiza
         setDueDate(dueDate);
         setPriority(priority);
         this.status = ValidationUtils.required(status, "Task status");
+        this.completedAt = completedAt;
     }
 
     protected Task(Task source) {
         this(source.id, source.title, source.description, source.subjectId, source.createdDate,
-                source.dueDate, source.priority, source.status);
+                source.dueDate, source.priority, source.status, source.completedAt);
         recurrence = source.recurrence;
         recurrenceAdvanced = source.recurrenceAdvanced;
         for (Task child : source.subtasks) {
@@ -114,10 +122,27 @@ public abstract class Task implements Identifiable, Comparable<Task>, Prioritiza
         return status;
     }
 
+    /** Latest recorded completion, or null if no completion time is known. */
+    public final Instant getCompletedAt() {
+        return completedAt;
+    }
+
     public final void updateStatus(TaskStatus nextStatus) {
+        transition(nextStatus, null);
+    }
+
+    /** Applies a status change and dates a new completion using the supplied clock instant. */
+    public final void updateStatus(TaskStatus nextStatus, Instant transitionAt) {
+        transition(nextStatus, ValidationUtils.required(transitionAt, "Status change time"));
+    }
+
+    private void transition(TaskStatus nextStatus, Instant transitionAt) {
         ValidationUtils.required(nextStatus, "Task status");
         if (status == TaskStatus.COMPLETED && nextStatus == TaskStatus.IN_PROGRESS) {
             throw new IllegalStateException("Reopen a completed task to TODO before starting it.");
+        }
+        if (status != TaskStatus.COMPLETED && nextStatus == TaskStatus.COMPLETED && transitionAt != null) {
+            completedAt = transitionAt;
         }
         status = nextStatus;
     }

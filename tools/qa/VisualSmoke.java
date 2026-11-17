@@ -52,12 +52,13 @@ class VisualSmoke {
 
     public static void main(String[] args) throws Exception {
         if (args.length < 1 || args.length > 2 || GraphicsEnvironment.isHeadless()) {
-            throw new IllegalArgumentException("Use a desktop: VisualSmoke <screenshot folder> [dashboard|workflow|all]");
+            throw new IllegalArgumentException("Use a desktop: VisualSmoke <screenshot folder> [dashboard|analytics|workflow|all]");
         }
         Path output = Path.of(args[0]).toAbsolutePath();
         Files.createDirectories(output);
         List<String> capture = args.length == 2 && args[1].equals("all") ? NAVIGATION
                 : args.length == 2 && args[1].equals("dashboard") ? List.of("navDashboard")
+                : args.length == 2 && args[1].equals("analytics") ? List.of("navAnalytics")
                 : args.length == 2 && args[1].equals("workflow") ? List.of("navAttendance", "navFocus")
                 : VISUAL_SAMPLE;
         Clock clock = Clock.systemDefaultZone();
@@ -102,6 +103,7 @@ class VisualSmoke {
                             frame.validate();
                         });
                         AtomicReference<BufferedImage> image = new AtomicReference<>();
+                        worker.submit(() -> { }).get(15, TimeUnit.SECONDS);
                         SwingUtilities.invokeAndWait(() -> image.set(render(frame, size[0], size[1])));
                         if (image.get().getWidth() != size[0] || image.get().getHeight() != size[1]) {
                             throw new AssertionError("Window manager changed the requested client size.");

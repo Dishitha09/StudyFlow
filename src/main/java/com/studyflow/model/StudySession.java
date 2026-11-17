@@ -3,6 +3,7 @@ package com.studyflow.model;
 import com.studyflow.utils.ValidationUtils;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
 
 /** A study block that can compare time spent with its original estimate. */
@@ -13,7 +14,14 @@ public final class StudySession extends Task {
     public StudySession(String id, String title, String description, String subjectId, LocalDate createdDate,
                         LocalDate dueDate, Priority priority, TaskStatus status, Duration plannedDuration,
                         Duration actualDuration) {
-        super(id, title, description, subjectId, createdDate, dueDate, priority, status);
+        this(id, title, description, subjectId, createdDate, dueDate, priority, status,
+                plannedDuration, actualDuration, null);
+    }
+
+    public StudySession(String id, String title, String description, String subjectId, LocalDate createdDate,
+                        LocalDate dueDate, Priority priority, TaskStatus status, Duration plannedDuration,
+                        Duration actualDuration, Instant completedAt) {
+        super(id, title, description, subjectId, createdDate, dueDate, priority, status, completedAt);
         setPlannedDuration(plannedDuration);
         setActualDuration(actualDuration);
     }

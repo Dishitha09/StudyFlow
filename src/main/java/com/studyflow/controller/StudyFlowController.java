@@ -24,6 +24,7 @@ import com.studyflow.service.TaskManager;
 import com.studyflow.service.ReminderService;
 import com.studyflow.service.StudyAssistant;
 import com.studyflow.service.MaterialLibrary;
+import com.studyflow.service.AnalyticsService;
 import com.studyflow.strategy.SortByCreationDate;
 import com.studyflow.strategy.SortByDeadline;
 import com.studyflow.strategy.SortByPriority;
@@ -65,6 +66,13 @@ public final class StudyFlowController {
 
     public LocalDate currentDate() {
         return LocalDate.now(clock);
+    }
+
+    public void readAnalytics(LocalDate start, LocalDate end, Consumer<AnalyticsService.Report> success,
+                              Consumer<String> failure) {
+        submit(() -> new AnalyticsService(clock).summarize(start, end, context.taskManager().findAll(),
+                context.subjectManager().findAll(), context.focusRepository().load(),
+                context.attendanceService().snapshot()), success, failure);
     }
 
     public void query(TaskQuery query, Consumer<List<Task>> success, Consumer<String> failure) {

@@ -44,3 +44,11 @@
 - Verification: **170 tests passed**, no failures/errors/skips. PDF tests cover rankings, real source pages, OCR empty states, cache repair and cancellation. Mock provider tests cover all three question types, malformed results, refused outputs, answer and citation validation, and no duplicate history on retry. A native consent probe verified Cancel sends nothing and Send transmits the reviewed request. The packaged desktop probe imported a two-page fixture, found page 2, created offline revision notes and opened History in a reopened profile.
 - Screenshots: [Text matches](screenshots/completion/pdf-text-matches.png), [Local assistant](screenshots/completion/study-assistant-local.png), [Reopened history](screenshots/completion/study-history-reopened.png).
 - Gate: passed. The configured live AI service was not exercised. Phase 6 adds visual analytics using saved records.
+
+## Phase 6 · Visual analytics
+
+- Files: `AnalyticsService`, `AnalyticsPanel`, task model/manager/repository, main desktop wiring and QA tools. New `TaskCompletionTimeTest` and `AnalyticsServiceTest`.
+- Why: report current task inventory separately from activity in an inclusive date range. Graph task completions, actual focus minutes, subject study time and recorded class attendance against targets. Legacy records without completion dates are not assigned guessed dates; the optional timestamp is omitted when unknown. No startup rewrite.
+- Verification: **177 tests passed**, no failures/errors/skips. Tested real persisted completion, duplicate updates, backups and recurrence, timezone boundaries, focus totals, and empty attendance. The native journey sets a custom date range excluding the new completion and checks that current inventory still shows it. The compact chart layout was repaired and rechecked in both themes at all four dimensions.
+- Screenshots: [light 1366×768](screenshots/completion/analytics-light-1366x768.png), [compact dark](screenshots/completion/analytics-dark-1024x700.png), [logical 1920×1080 dark](screenshots/completion/analytics-dark-1920x1080.png).
+- Gate: passed. Per-day/week activity counts the latest known completion for each surviving top-level task, independently of its current status. Phase 7 exercises the external boundaries with mocks.

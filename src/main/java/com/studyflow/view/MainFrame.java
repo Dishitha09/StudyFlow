@@ -10,6 +10,7 @@ import com.studyflow.model.TaskStatus;
 import com.studyflow.model.Theme;
 import com.studyflow.view.academic.AcademicPanel;
 import com.studyflow.view.attendance.AttendancePanel;
+import com.studyflow.view.analytics.AnalyticsPanel;
 import com.studyflow.view.dashboard.DashboardPanel;
 import com.studyflow.view.materials.MaterialPanel;
 import com.studyflow.view.navigation.SidebarPanel;
@@ -68,7 +69,7 @@ public final class MainFrame extends JFrame {
     private final javax.swing.Timer reminderTimer;
     private final javax.swing.JTextArea reminderText = new javax.swing.JTextArea(9, 48);
     private final JButton reminderButton = new JButton("Reminders");
-    private final javax.swing.JTextArea analytics = new javax.swing.JTextArea();
+    private final AnalyticsPanel analytics;
     private final JLabel feedback = new JLabel("Loading your workspace…") {
         @Override
         public Color getForeground() {
@@ -85,12 +86,15 @@ public final class MainFrame extends JFrame {
     private String pendingTaskSelection;
     private boolean notificationsEnabled;
     private java.time.LocalDate displayedDate;
+    private Page activePage;
+    private long analyticsRequest;
     private java.util.concurrent.atomic.AtomicBoolean cancelPdfImport;
 
     public MainFrame(AppConfig config, StudyFlowController controller, Theme theme) {
         super(config.name());
         this.controller = controller;
         this.theme = theme;
+        analytics = new AnalyticsPanel(controller.currentDate(), this::refreshAnalytics);
         setName("studyFlowWindow");
         setDefaultCloseOperation(DO_NOTHING_ON_CLOSE);
         fitDesktop();
@@ -259,14 +263,7 @@ public final class MainFrame extends JFrame {
         content.add(search, Page.SEARCH.name());
         content.add(attendance, Page.ATTENDANCE.name());
         content.add(materials, Page.MATERIALS.name());
-        JPanel analyticsPage = new JPanel(new BorderLayout(0, 18));
-        analyticsPage.setBorder(BorderFactory.createEmptyBorder(26, 28, 24, 28));
-        analyticsPage.add(ViewStyle.heading("Analytics"), BorderLayout.PAGE_START);
-        analytics.setName("analyticsTotals");
-        analytics.setEditable(false);
-        analytics.setBorder(BorderFactory.createEmptyBorder(16, 16, 16, 16));
-        analyticsPage.add(ViewStyle.scroll(analytics), BorderLayout.CENTER);
-        content.add(analyticsPage, Page.ANALYTICS.name());
+        content.add(analytics, Page.ANALYTICS.name());
         for (Page page : Page.values()) {
             if (page.availableStage() > 0) {
                 content.add(availability(page.title(), page.availableStage()), page.name());
@@ -357,11 +354,13 @@ public final class MainFrame extends JFrame {
         if (closing) {
             return;
         }
+        activePage = page;
         sidebar.showPage(page);
         pages.show(content, page.name());
         if (page == Page.SEARCH) {
             SwingUtilities.invokeLater(search::focusQuery);
         }
+        if (page == Page.ANALYTICS) refreshAnalytics(analytics.range());
     }
 
     private void dashboardAction(DashboardPanel.Action action) {
@@ -393,6 +392,7 @@ public final class MainFrame extends JFrame {
 
     private void showRecords(StudyFlowController.Records records) {
         displayedDate = records.dashboard().date();
+        analytics.setReferenceDate(displayedDate);
         if (theme != records.theme()) {
             theme = records.theme();
             ViewStyle.applyTheme(theme);
@@ -416,12 +416,18 @@ public final class MainFrame extends JFrame {
         materials.setRemoteAvailable(records.remoteAi());
         integrations.showData(records.allTasks(), taskSubjects, records.googleConfigured(), records.googleConnected(),
                 records.linkedCalendarTasks(), records.remoteAi(), records.playlists(), records.integrationsWarning());
-        var summary = records.dashboard();
-        analytics.setText("Tasks completed    " + summary.completed() + " / " + summary.total()
-                + "\nTasks pending       " + summary.pending()
-                + "\nTasks overdue       " + summary.overdue()
-                + "\nFocus sessions      " + records.completedSessions()
-                + "\nClasses attended   " + records.attendance().attended() + " / " + records.attendance().total());
+        if (activePage == Page.ANALYTICS) refreshAnalytics(analytics.range());
+    }
+
+    private void refreshAnalytics(AnalyticsPanel.Range range) {
+        if (closing || range == null) return;
+        long request = ++analyticsRequest;
+        analytics.showLoading();
+        controller.readAnalytics(range.start(), range.end(), report -> {
+            if (!closing && request == analyticsRequest) analytics.showReport(report);
+        }, message -> {
+            if (!closing && request == analyticsRequest) analytics.showError(message);
+        });
     }
 
     private void query(TaskQuery query) {

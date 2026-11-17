@@ -289,11 +289,29 @@ class TaskManagerTest {
         Task retained = checked.findById(created.getId()).orElseThrow();
         assertEquals("Original", retained.getTitle());
         assertEquals(TaskStatus.TODO, retained.getStatus());
+        assertNull(retained.getCompletedAt());
         assertEquals(1, checked.findAll().size());
 
         storage.failWrites = false;
-        checked.markCompleted(created.getId());
+        assertEquals(CLOCK.instant(), checked.markCompleted(created.getId()).getCompletedAt());
         assertEquals(2, checked.findAll().size());
+    }
+
+    @Test
+    void metadataEditsCannotRewriteACompletionOrCompleteANestedTask() {
+        Task root = manager.quickAdd("Report", null, null, null);
+        Task child = manager.createSubtask(root.getId(), draft("Outline"));
+        manager.markCompleted(root.getId());
+
+        assertThrows(IllegalArgumentException.class, () -> manager.update(root.getId(), edited -> {
+            edited.updateStatus(TaskStatus.TODO);
+            edited.updateStatus(TaskStatus.COMPLETED, CLOCK.instant().plusSeconds(120));
+        }));
+        assertThrows(IllegalArgumentException.class, () -> manager.update(root.getId(), edited ->
+                edited.editSubtask(child.getId(), item -> item.updateStatus(TaskStatus.COMPLETED))));
+
+        assertEquals(CLOCK.instant(), manager.findById(root.getId()).orElseThrow().getCompletedAt());
+        assertEquals(TaskStatus.TODO, manager.findSubtasks(root.getId()).getFirst().getStatus());
     }
 
     @Test

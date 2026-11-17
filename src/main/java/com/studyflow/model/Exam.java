@@ -2,6 +2,7 @@ package com.studyflow.model;
 
 import com.studyflow.utils.ValidationUtils;
 
+import java.time.Instant;
 import java.time.LocalDate;
 
 /** An assessment with preparation tracked separately from the task lifecycle. */
@@ -13,7 +14,14 @@ public final class Exam extends Task {
 
     public Exam(String id, String title, String description, String subjectId, LocalDate createdDate,
                 LocalDate dueDate, Priority priority, TaskStatus status, String examType, String preparationStatus) {
-        super(id, title, description, subjectId, createdDate, dueDate, priority, status);
+        this(id, title, description, subjectId, createdDate, dueDate, priority, status,
+                examType, preparationStatus, null);
+    }
+
+    public Exam(String id, String title, String description, String subjectId, LocalDate createdDate,
+                LocalDate dueDate, Priority priority, TaskStatus status, String examType, String preparationStatus,
+                Instant completedAt) {
+        super(id, title, description, subjectId, createdDate, dueDate, priority, status, completedAt);
         setExamType(examType);
         setPreparationStatus(preparationStatus);
     }
