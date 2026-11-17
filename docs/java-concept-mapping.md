@@ -6,11 +6,11 @@ Each entry points to StudyFlow code or a separate course demonstration. The stag
 | --- | --- | --- |
 | JVM, compilation and execution | `pom.xml` and `Main.main` | The Maven Compiler Plugin calls the JDK compiler to produce Java 21 bytecode. The JVM loads the bytecode and invokes `main` through the Exec plugin. |
 | Packages and Java API | `com.studyflow.config`, `com.studyflow.view`, and `Main` | Packages organize classes by responsibility. `java.nio.file.Path` and `javax.swing` provide standard filesystem and desktop APIs. |
-| Primitive types, variables and methods | `AppConfig.darkByDefault()` and `Main.openWindow` | A `boolean` holds one of two values. The `installed` local variable represents a setup result, and a method gives the setup action a named boundary. |
+| Primitive types, variables and methods | `AttendanceMath` and `UserSettings.isNotificationsEnabled()` | A `boolean` represents whether notifications are enabled. Attendance counts use integer arithmetic, and a named method gives each calculation a reusable boundary. |
 | Arrays, strings and command-line arguments | `AppConfig.fromArgs(String[])` | The runtime passes arguments as a `String` array. Checking the length before indexing makes missing arguments safe to report. |
 | Static and final members | `AppConfig.APPLICATION_NAME`, `AppConfig.fromArgs` | The static method belongs to the class. The static final name is a shared constant with one value. |
 | Classes, objects, encapsulation and access | `AppConfig`, `Main` and the view classes | A class defines its fields and operations. A constructor creates an instance. Configuration exposes named accessors while UI implementation details remain private. |
-| Swing, AWT, JFrame, JPanel and layouts | `MainFrame`, `InitialDashboardPanel` and `Main` | A frame is the native top-level window. Panels arrange related widgets. Layout managers compute positions and sizes, and the EDT owns UI access. |
+| Swing, AWT, JFrame, JPanel and layouts | `MainFrame`, `SidebarPanel` and `DashboardPanel` | A frame is the top-level window. `CardLayout` presents one page at a time and panel layouts arrange related widgets. The EDT owns UI access. |
 | Runnable and the EDT | `Main.main` | A lambda is a `Runnable` that captures launch configuration. `SwingUtilities.invokeLater` schedules it on Swing's event thread. |
 | UML and MVC | `docs/uml` and `docs/architecture.md` | Use case, class, sequence, activity, state and component diagrams show different aspects of the same system. MVC separates widget code, UI coordination and application data or rules. |
 | Constructors and constructor overloading | `GeneralTask` and `UserSettings` | A shorter constructor delegates to the full constructor with defaults. Each path uses the same validation. |
@@ -28,16 +28,20 @@ Each entry points to StudyFlow code or a separate course demonstration. The stag
 | Exceptions, `try`, `catch`, `finally`, `throw` and `throws` | `Main`, `DataDirectoryLock`, `FileStorage`, `TaskNotFoundException` and `MainFrame.AppMark.paintComponent` | `IOException` is checked and callers handle or declare it. Unchecked domain exceptions report invalid use. `finally` disposes a temporary graphics context even if painting fails. |
 | Thread creation, Runnable, lifecycle and ExecutorService | `Main.main`, `initialize` and `finish` | A thread factory names the worker. Tasks queue in order and file work stays off the EDT. Shutdown runs cleanup after pending writes, stops accepting work and releases the directory lock. |
 | Synchronization | `TaskManager` mutations and `AcademicCollection` | Synchronized sections protect read-modify-write operations. The application worker serializes commands that touch multiple record types. |
-| ActionListener and ActionEvent | `VerificationPanel` form buttons | Swing invokes an action listener when a button is activated. The controller receives parsed input and queues the corresponding use case. |
+| ActionListener and ActionEvent | `TaskFormDialog` and `SidebarPanel` buttons | Swing invokes an action listener when a button is activated. A form parses values for a controller command, while sidebar actions select a page. |
 | Anonymous inner class | `Main.openWindow` | An anonymous `WindowAdapter` handles only the closing event and retains its close guard for that frame. |
 | Adapter | JSON repositories implementing `Storage` | The repository adapts a validated domain snapshot to a JSON representation behind the same contract the in-memory implementation uses. |
+| Records and sealed interfaces | `TaskDraft.Details`, `QuestionSet`, and `AnalyticsService.Report` | Records collect named values and can enforce invariants in their constructors. Sealed task detail types constrain the permitted variants. |
+| Optional and nullable values | `Task.getDaysRemaining`, `Task.getCompletedAt`, and `AnalyticsService` | An undated task has no days-remaining value. A legacy completion can have an unknown date. The report does not treat either absence as zero or guess a date. |
+| Maps, priority queues and deterministic sorting | `AnalyticsService` and `PassageRanker` | Analytics keys counters by local date and subject. Retrieval keeps its best candidates in a bounded queue and uses filename, ID and page as tie breakers. |
+| Interface-based remote boundary | `AIProvider`, `OpenAiProvider` and `StudyAssistant.prepare` | The application prepares evidence independently of the HTTP provider. Tests substitute transport responses to check source IDs and structured results without account credentials. |
 
-## Later-stage and educational coverage
+## Educational coverage
 
 | Concept | Placement and viva explanation |
 | --- | --- |
-| MouseEvent and MouseListener | Stage 7 can add pointer-specific interactions where needed. `ActionListener` already supports mouse and keyboard activation for the Stage 6 buttons. |
+| MouseEvent and MouseListener | `DashboardTaskList` responds to clicking a task row through a mouse adapter. Buttons use action listeners so keyboard activation is also available. |
 | Thread priorities | `ThreadExamplesTest.explicitlyCoordinatesAThreadFromStartThroughCompletion` sets a priority and uses a latch for ordering. Priorities are hints to the JVM and operating system. |
 | Singleton, Abstract Factory and Decorator | `PatternExamplesTest` uses a one-instance enum, a factory that supplies matching labels and a wrapper that adds a highlight. Production code uses explicit lifecycle ownership, one task factory and direct service dependencies. |
-| Composite | A nested-folder model can use a shared interface with leaf and folder implementations. Stage 6 workspaces use ordered subject IDs and task composition models the existing tree. |
+| Composite | Task composition models the existing owned tree. Workspaces use ordered references to independent subjects. A future folder model could use the Composite pattern when leaf and folder types need common operations. |
 | HashMap | `PatternExamplesTest.abstractFactoryCreatesMatchingLabelsAndDecoratorAddsOneBehavior` selects a family by name. Application Kanban uses `EnumMap` for enum keys. |

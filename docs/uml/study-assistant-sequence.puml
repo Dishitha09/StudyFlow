@@ -1,0 +1,37 @@
+@startuml
+title StudyFlow | Local and consented remote study
+actor Student
+participant "MaterialPanel (EDT)" as View
+participant "StudyFlowController (worker)" as Controller
+participant StudyAssistant as Assistant
+participant "MaterialLibrary / page index" as Library
+participant "Configured AIProvider" as Provider
+database "Local History" as History
+
+Student -> View : Topic, source and study mode
+View -> Controller : prepareStudy(request)
+Controller -> Assistant : prepare(request)
+Assistant -> Library : rank local passages
+Library --> Assistant : known documents and PDF pages
+Assistant --> View : frozen input and sourced evidence
+alt Offline extractive mode
+  View -> Controller : runStudy(prepared)
+  Controller -> Assistant : execute(prepared)
+  Assistant -> Assistant : select and label source extracts
+else Remote and explicit Send request
+  View -> Student : Show exact content to send
+  Student -> View : Approve
+  View -> Controller : runStudy(prepared)
+  Controller -> Assistant : execute(prepared)
+  Assistant -> Provider : Consented request and source IDs
+  Provider --> Assistant : Remote response
+  Assistant -> Assistant : Validate result and citation IDs
+else Cancel request
+  Student -> View : Cancel
+  note right of View : No provider call or history entry
+end
+opt Successful output and history enabled
+  Assistant -> History : Save bounded local result
+  Assistant --> View : Render output and source links
+end
+@enduml

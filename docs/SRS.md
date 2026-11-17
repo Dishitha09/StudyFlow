@@ -1,7 +1,7 @@
 # StudyFlow software requirements specification
 
 **Project** — Design and Development of a Student Productivity and Academic Management System Using Java
-**Release scope** — Stages 1–6
+**Release scope** — Stages 1–12 and completion pass
 **Primary platform** — Windows 10/11 with Java 21 LTS
 
 ## Purpose and users
@@ -137,3 +137,17 @@ Each stage shall preserve previous behavior, record executed verification and ou
 | 10 — Materials and AI | Subject-wise study material library, document and PDF uploads, PDF text extraction, topic-based document retrieval, AI summaries and study assistance, and generated revision questions. |
 | 11 — Integrations | Explicit one-way Google Calendar synchronization with desktop OAuth, offline iCalendar export, Spotify shortcuts, and an optional external AI provider. |
 | 12 — Deployment | Expanded integration and GUI testing, executable JAR, final project report and UML, and source ZIP. |
+
+## Completion feature matrix
+
+| Area | Release behavior | Evidence and boundary |
+| --- | --- | --- |
+| Profile and recovery | One writer per profile. Strict JSON validation, atomic replacement, automatic previous copies and manual backup or restore for tasks, subjects, workspaces, notes, settings, attendance, attendance targets, focus and integration links. A damaged optional store is reported without overriding a successful core save. | `FileStorage`, `StudyFlowContext`, `ProfileRecoveryTest` and `JsonRepositoryTest`. Restoring subjects checks related attendance and material references. A full profile copy also carries PDF files. |
+| Desktop shell | Grouped sidebar, global search shortcut, persistent light and dark themes, guarded form drafts, and dashboard counts built from profile records. Today and Upcoming open the corresponding task details. | `MainFrame`, `SidebarPanel`, `DashboardPanel`, `FormDialogs`, and Windows visual and workflow probes. |
+| Planning and academic work | Task CRUD, typed tasks, subtasks, recurrence, combined filters, priority, Kanban, monthly calendar, subjects, workspaces, notes and grouped search. Focus records completed intervals. Local reminders surface due and overdue work. | Task, academic and reminder tests. Calendar deadlines and Kanban cards refer to existing task IDs. |
+| Attendance | Dated class records, subject-specific targets, history corrections and recovery projections. | `AttendanceService`, `AttendanceMath` and attendance tests. Projection uses exact integer arithmetic and distinguishes an unreachable 100% target from a reachable one. |
+| PDF library | Local PDF import with cancellation, page-linked evidence, ranked Unicode keyword search and repair of a missing, stale or invalid cache from the managed copy. | `MaterialLibrary`, `PdfPassageIndex`, `PassageRanker` and PDF retrieval tests. Scans can be stored; text search needs existing selectable text or prior OCR. |
+| Study assistant | Local evidence selection and extractive study modes. Optional remote answer, summary and structured short-answer, long-answer or multiple-choice sets use explicitly approved snippets with page references. History can be disabled per request and supports deletion of individual entries. | `StudyAssistant`, `StudyQuestionFormat`, `QuestionSet`, and simulated provider and desktop consent tests. Generated material requires source review. |
+| Analytics | Inclusive date filtering for recorded task completions, actual focus sessions and attendance. Separate current task inventory shows legacy completions with unknown dates without putting them in dated totals. | `AnalyticsService` and completion timestamp tests. The report has one latest timestamp per surviving root task and no invented legacy history. |
+| Integrations | Offline `.ics` export, optional one-way Google Calendar sync with session-only access, and saved Spotify shortcuts opened in the system browser. | Calendar/export and provider transport tests use local fixtures or mocks. Live account behavior remains an external verification item. |
+| Handoff | Maven source, runnable Java 21 JAR, project docs, viva guide, editable and rendered UML, and final verification evidence. | [Completion log](completion-log.md), [test guide](testing.md), and [privacy and limitations](privacy-and-limitations.md). |

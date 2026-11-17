@@ -1,4 +1,6 @@
 # StudyFlow project report
+
+This report preserves the original project stages. See the [0.2.0 completion report](stage-reports/premium-completion-report.md) and [final checklist](final-checklist.md) for the later Java 21 Swing release, its study and analytics changes, and actual verification.
 ## Design and development of a student productivity and academic management system using Java
 
 StudyFlow consolidates assignments, deadlines, notes, attendance, and study materials into a single desktop workspace. The application was implemented in twelve checkpoints, starting with requirements and UML and ending with a packaged desktop build. This report describes the design, algorithms, testing approach, and operating boundaries of the release.

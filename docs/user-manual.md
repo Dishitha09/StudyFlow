@@ -3,7 +3,7 @@
 
 ### Start StudyFlow
 
-Install a Java 21 JDK, then confirm that `java -version` reports Java 21. Open a terminal in the release directory and run the executable JAR. Use a graphical desktop session so Swing can open the window.
+For the Windows x64 bundle, extract the complete archive and double-click `StudyFlow.exe` with its `app` and `runtime` folders intact. The unsigned bundle comes with Java. If you downloaded the portable JAR, install Java 21, confirm that `java -version` reports it, then open a terminal in the extracted folder:
 
 ```powershell
 java -jar StudyFlow.jar
@@ -16,7 +16,7 @@ mvn test
 mvn exec:java '-Dexec.mainClass=com.studyflow.Main'
 ```
 
-StudyFlow normally uses the `data` directory under the working directory. Start it with `--data-dir` to choose a specific profile location, such as when moving to another working folder or keeping a separate practice profile.
+The JAR normally uses `data` under the working directory. The Windows bundle normally uses `%LOCALAPPDATA%\StudyFlow\data`. Start either with `--data-dir` to open an older profile or keep a separate practice profile. Close any earlier copy that uses that directory.
 
 ```powershell
 java -jar StudyFlow.jar --data-dir "C:\StudyFlow data"
@@ -41,8 +41,9 @@ The Dashboard shows today's tasks, upcoming deadlines, Smart Priority, and task 
 - **Subtasks and recurrence.** Open the selected task's subtask and recurrence controls. Add smaller steps and complete them independently. Set daily, weekly, or monthly recurrence on a root task with a deadline. Completing it creates the next occurrence.
 - **Calendar.** Navigate by month, filter by subject, and select a date. Choose **Edit task** to change the deadline or assign a different subject. **Edit subject** opens the linked course for editing.
 - **Kanban Board.** The progress chart shows the share of tasks in each status and the number overdue. Cards show priority, type, and deadline. Move a task between **To do**, **In progress**, and **Completed** using the card controls.
-- **Search.** Enter words such as a course name plus a topic. Results are labeled by record type. Choose **Open result** or press Enter on a selected result to go to the record.
-- **Focus and Analytics.** Choose a focus or break preset, or type a custom length. Press **Ctrl+Space** to start, pause, or resume from the Focus panel. Link focus time to a task or subject, and use **Finish early** to record time spent. Analytics summarizes tasks, attendance, and completed focus sessions.
+- **Search.** Press **Ctrl+K**. Enter words such as a course name plus a topic. Choose **Open result** or press Enter on a selected result to open the actual record.
+- **Focus.** Choose a preset or custom duration. Press **Ctrl+Space** to start, pause, or resume from Focus. The timer continues while you switch pages. Use **Finish early** to record time spent before closing; unfinished intervals do not restart.
+- **Analytics.** Choose a period or enter inclusive custom dates. The range affects activity trends, focus and attendance. The task inventory always shows current saved tasks, including older completions whose dates are unknown.
 
 ### Track attendance
 
@@ -59,12 +60,12 @@ An exact 100 percent target cannot be regained after a missed class. Attendance 
 
 ### Work with PDFs
 
-1. Open **Study Materials**, then select **Upload PDF**. Pick a PDF with selectable text and enter its title and optional subject and description.
-2. Use **Search** to look up a saved document by title or metadata. Select **Open PDF** to open the managed copy with the computer's default PDF viewer.
-3. Choose **Study this PDF** or open the **Study Assistant** tab. Select a topic and mode, then select **Run assistant**. Modes include summaries, key points, formulas, revision notes, and topic explanation.
-4. Review the file and page references alongside the study output. Use **Open source PDF** to check a passage in the original context.
+1. Open **Study Materials → Upload PDF**. Choose a PDF and enter its title and optional subject. Check copy and extraction progress or choose **Cancel import** before saving.
+2. Search by a title or words from the PDF. **Text matches** shows ranked snippets with actual file names and pages. **Open source PDF** opens the managed file in your PDF viewer.
+3. In **Study Assistant**, choose a topic, scope and mode. Local tools produce source extracts. If a provider is configured, choose remote generation to get a summary, explanation, or a structured question set. Question types are short answer, long answer and multiple choice, with a count, difficulty and answer/reference visibility controls.
+4. Before any remote request, review the exact content in the confirmation dialog. **Send request** is explicit; **Cancel** sends nothing. Check the cited PDF pages before relying on generated output.
 
-**History** keeps the latest 50 saved requests and outputs in the current StudyFlow profile. Select an entry to read the output and its source references. **Use this request** fills the assistant form without running it. If you want to skip saving an output, turn off **Save in local history** before running it. **Clear history** removes the saved requests and outputs.
+**History** keeps up to 50 saved results in the current local profile. You can open the cited material, reuse a request without running it, delete one selected result, or clear the whole history. Uncheck **Save in local history** before a run to skip saving.
 
 StudyFlow extracts existing PDF text. Image-only scans may need OCR before uploading. The local formula view looks for equation-like text in retrieved passages.
 

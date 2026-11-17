@@ -1,5 +1,6 @@
 package com.studyflow.view.settings;
 
+import com.studyflow.config.AppConfig;
 import com.studyflow.model.Theme;
 import com.studyflow.view.ViewStyle;
 
@@ -23,7 +24,11 @@ public final class SettingsPanel extends JPanel {
                          IntegrationsPanel integrations) {
         super(new BorderLayout(0, 20));
         setBorder(BorderFactory.createEmptyBorder(26, 28, 24, 28));
-        add(ViewStyle.heading("Settings"), BorderLayout.PAGE_START);
+        JPanel heading = new JPanel(new BorderLayout(8, 0));
+        heading.setOpaque(false);
+        heading.add(ViewStyle.heading("Settings"), BorderLayout.LINE_START);
+        heading.add(ViewStyle.muted("StudyFlow " + AppConfig.VERSION), BorderLayout.LINE_END);
+        add(heading, BorderLayout.PAGE_START);
 
         JPanel card = ViewStyle.card(new BorderLayout(0, 12));
         card.setBorder(BorderFactory.createEmptyBorder(18, 20, 18, 20));

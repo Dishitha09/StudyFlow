@@ -1,18 +1,28 @@
 # StudyFlow
 
-StudyFlow is a local-first Java desktop workspace for university tasks, subjects, workspaces and notes.
+StudyFlow 0.2.0 is an offline-first Java desktop workspace for coursework, focus, attendance, and study PDFs.
 
-![The StudyFlow dashboard running with sample academic data](docs/screenshots/dashboard.png)
+![The StudyFlow dashboard running with sample academic data](docs/screenshots/completion/dashboard-light-1366x768.png)
 
 ## Run the packaged application
 
-With Java 21 installed, open a terminal in the directory containing `StudyFlow.jar` and run:
+The release downloads are on [GitHub Releases](https://github.com/Dishitha09/StudyFlow/releases).
+
+**Windows x64 bundle:** extract the entire Windows archive and double-click `StudyFlow.exe` inside its `StudyFlow` folder. The unsigned app image includes Java 21 and keeps its profile under `%LOCALAPPDATA%\StudyFlow\data`. Keep the adjacent `app` and `runtime` folders with the executable.
+
+**Portable JAR:** install Java 21, extract the portable project ZIP if necessary, then open a terminal in the folder with `StudyFlow.jar`:
 
 ```powershell
 java -jar StudyFlow.jar
 ```
 
-The app reads and writes `data` in the working directory. Use `java -jar StudyFlow.jar --data-dir "C:\StudyFlow data"` to choose another profile.
+The JAR uses `data` in the working directory. Both launchers accept `--data-dir "C:\StudyFlow data"` to choose an existing or alternate profile. Close earlier copies before opening the same profile. No sample records are preloaded.
+
+On Windows, build a new unsigned app image after `mvn clean verify`:
+
+```powershell
+.\tools\package-windows.ps1 -Destination ..\StudyFlow-Windows
+```
 
 ## Prerequisites
 
@@ -55,8 +65,8 @@ StudyFlow opens to the Dashboard. It shows live task totals, today's deadlines, 
 - **Settings** switches between Light and Dark immediately and saves the theme for the next launch.
 - **Calendar** filters deadlines by subject and lets you edit a deadline or its subject. **Kanban** shows progress by status and highlights overdue deadlines. Use a task’s context menu to manage recurrence and subtasks.
 - **Focus** offers presets and custom timer lengths. Use **Ctrl+Space** to start or pause from the Focus panel. Completed focus time can be linked to a task or subject.
-- **Attendance** records class outcomes and corrections, and calculates classes you need to attend or can miss. **Analytics** summarizes recorded task, focus and attendance activity.
-- **Study Materials** imports PDFs. The **Study Assistant** retrieves cached, page-numbered passages and creates study aids. **History** shows saved outputs and citations and can reuse a request. Turn off **Save in local history** before a run to skip saving it, or clear previous entries from **History**.
+- **Attendance** records class outcomes and corrections, and calculates classes you need to attend or can miss. **Analytics** graphs saved activity by date, subject, and attendance target. Older completions with unknown dates remain visible in inventory without appearing in dated trends.
+- **Study Materials** imports PDFs with progress and cancellation and searches ranked text matches with page references. The **Study Assistant** labels local extracts and can optionally produce remote short-answer, long-answer or multiple-choice question sets after you review the exact request. **History** can reuse or delete individual entries; uncheck **Save in local history** to omit a run.
 
 ## Optional integrations
 
@@ -98,6 +108,12 @@ Use `--data-dir` before `--restore` when recovering an alternate profile. StudyF
 - [Software requirements](docs/SRS.md)
 - [Architecture and UML](docs/architecture.md)
 - [Design decisions](docs/design-decisions.md)
+- [Design system](docs/design-system.md)
+- [Completion audit](docs/completion-audit.md)
+- [Verified phase log](docs/completion-log.md)
+- [Final checklist](docs/final-checklist.md)
+- [Viva preparation](docs/viva-guide.md)
+- [Privacy and limits](docs/privacy-and-limitations.md)
 - [Development log](docs/development-log.md)
 - [Java concept mapping](docs/java-concept-mapping.md)
 - [Stage reports](docs/stage-reports)

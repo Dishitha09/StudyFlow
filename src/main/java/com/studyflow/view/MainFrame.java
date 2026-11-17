@@ -96,6 +96,8 @@ public final class MainFrame extends JFrame {
         this.theme = theme;
         analytics = new AnalyticsPanel(controller.currentDate(), this::refreshAnalytics);
         setName("studyFlowWindow");
+        var icon = MainFrame.class.getResource("/icons/studyflow.png");
+        if (icon != null) setIconImage(new javax.swing.ImageIcon(icon).getImage());
         setDefaultCloseOperation(DO_NOTHING_ON_CLOSE);
         fitDesktop();
 

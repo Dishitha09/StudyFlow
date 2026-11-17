@@ -22,6 +22,15 @@ class AppConfigTest {
     }
 
     @Test
+    void bundledAppKeepsUserDataOutsideTheRuntimeImage() {
+        Path profile = Path.of("fixture-user");
+        Path localAppData = profile.resolve("AppData").resolve("Local");
+        assertEquals(localAppData.resolve("StudyFlow").resolve("data"),
+                AppConfig.packagedProfile(localAppData.toString(), profile));
+        assertEquals(profile.resolve(".studyflow").resolve("data"), AppConfig.packagedProfile("", profile));
+    }
+
+    @Test
     void reportsIncorrectArguments() {
         assertThrows(IllegalArgumentException.class,
                 () -> AppConfig.fromArgs(new String[]{"--data-dir"}));

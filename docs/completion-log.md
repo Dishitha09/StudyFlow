@@ -59,3 +59,11 @@
 - Why: discard expired or revoked calendar sessions, support browser-sign-in cancellation, preserve event ownership and all-day boundaries, and keep redirected PDF directories outside managed writes. Credentials remain session/environment only.
 - Verification: **181 tests passed**, zero failures/errors/skips. A local loopback OAuth simulation verified state and PKCE; a fake transport verified create/update without duplication, ownership and idempotent delete, token refresh, revocation and reconnect. An independent fixture parser checked escaped text and inclusive start/exclusive end of an all-day `.ics` event. The Windows junction smoke confirmed refusal before any external writes. [Settings integrations](screenshots/completion/integrations-light-1366x768.png) is a real unauthenticated UI capture.
 - Gate: passed for mocked and offline behavior. Live Google and OpenAI checks were not performed.
+
+## Phase 8 · Release, QA and viva
+
+- Files: `pom.xml`, `AppConfig`, app icon/version display, `tools/package-windows.ps1`, `tools/package-release.py`, acceptance/test/report documentation, SRS, architecture, concept mapping, viva/privacy guides, and rendered PlantUML diagram sources.
+- Why: retain the verified standalone Java 21 launch while adding an unsigned Windows x64 image with Java bundled. The image's default profile lives outside the package. The source ZIP archives tracked files only and checks that both packages embed the same verified JAR.
+- Verification: final clean verify **182 tests**, 26 Surefire XML reports, zero failures/errors/skips. Both JAR and bundled Windows executable opened and closed with disposable profiles. Windows signature status was `NotSigned`. All four workflow probes passed. Measured 100%, 125%, 150%, and 200% Java render scales; the desktop's physical scaling stayed at 125%. See [checks and limits](testing.md).
+- Evidence: [100%](screenshots/completion/dpi-100-dashboard-light.png), [150%](screenshots/completion/dpi-150-analytics-dark.png), [200% logical](screenshots/completion/dpi-200-dashboard-dark.png), [components](uml/component-diagram.png) and [study consent sequence](uml/study-assistant-sequence.png).
+- Gate: passed for offline and simulated features. Live Google account and OpenAI model behavior remain unverified. The [checklist](final-checklist.md) distinguishes those boundaries.
