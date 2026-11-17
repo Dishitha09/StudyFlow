@@ -16,6 +16,7 @@ import java.nio.file.Path;
 import java.time.Clock;
 import java.util.Arrays;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import javax.swing.JOptionPane;
@@ -23,6 +24,8 @@ import javax.swing.SwingUtilities;
 
 /** Starts the Swing desktop application or runs a local data command. */
 public final class Main {
+    private static final String BACKUP_TYPES =
+            "<tasks|subjects|workspaces|notes|settings|attendance|attendance-targets|focus|integrations>";
     private Main() {
     }
 
@@ -51,13 +54,18 @@ public final class Main {
                 Thread.ofPlatform().name("studyflow-worker").factory());
         CompletableFuture<Void> finished = new CompletableFuture<>();
         worker.execute(() -> initialize(config, worker, finished));
-        finished.join();
+        try {
+            finished.join();
+        } catch (CompletionException failure) {
+            // The dialog already explained the problem. Keep raw data out of console and log output.
+            System.exit(1);
+        }
     }
 
     private static void backup(String[] args, int commandIndex) throws IOException {
         if (args.length != commandIndex + 2) {
             throw new IllegalArgumentException("Usage: StudyFlow [--data-dir <directory>] "
-                    + "--backup <tasks|subjects|workspaces|notes|settings>");
+                    + "--backup " + BACKUP_TYPES);
         }
         AppConfig config = AppConfig.fromArgs(Arrays.copyOf(args, commandIndex));
         Path backup = StudyFlowContext.backup(config.dataDirectory(), args[commandIndex + 1]);
@@ -67,7 +75,7 @@ public final class Main {
     private static void restore(String[] args, int restoreIndex) throws IOException {
         if (args.length != restoreIndex + 3) {
             throw new IllegalArgumentException("Usage: StudyFlow [--data-dir <directory>] "
-                    + "--restore <tasks|subjects|workspaces|notes|settings> <backup-path>");
+                    + "--restore " + BACKUP_TYPES + " <backup-path>");
         }
         AppConfig config = AppConfig.fromArgs(Arrays.copyOf(args, restoreIndex));
         StudyFlowContext.restore(config.dataDirectory(), args[restoreIndex + 1], Path.of(args[restoreIndex + 2]));
@@ -110,6 +118,7 @@ public final class Main {
             });
             frame.setVisible(true);
         } catch (RuntimeException error) {
+            AppLog.failure("application.window.failed", error);
             finish(context, worker, finished, () -> { }, error);
         }
     }
@@ -123,6 +132,7 @@ public final class Main {
                 context.close();
                 AppLog.event("application.stop");
             } catch (IOException closeError) {
+                AppLog.failure("application.stop.failed", closeError);
                 if (failure == null) {
                     failure = closeError;
                 } else {
@@ -144,7 +154,6 @@ public final class Main {
     }
 
     private static void showError(String title, Exception error) {
-        System.err.println(title + ": " + error.getMessage());
         JOptionPane.showMessageDialog(null, error.getMessage(), title, JOptionPane.ERROR_MESSAGE);
     }
 }

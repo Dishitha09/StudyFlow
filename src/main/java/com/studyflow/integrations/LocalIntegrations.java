@@ -58,15 +58,17 @@ public final class LocalIntegrations {
         if (tasks.isEmpty()) {
             throw new IllegalArgumentException("Select at least one task with a deadline.");
         }
+        // Check storage before sending an update that otherwise could not be recorded locally.
+        Set<String> existing = links.findAll().stream().map(Link::id).collect(Collectors.toSet());
         String calendar = google.calendarId();
         Map<String, Subject> byId = subjectIndex(subjects);
         for (Task task : tasks) {
             String event = google.upsert(task, task.getSubjectId() == null ? null : byId.get(task.getSubjectId()));
             Link mapping = new Link(mappingKey(task.getId(), calendar), "google", event);
-            if (links.existsById(mapping.id())) {
-                links.update(mapping);
-            } else {
+            if (existing.add(mapping.id())) {
                 links.insert(mapping);
+            } else {
+                links.update(mapping);
             }
         }
     }

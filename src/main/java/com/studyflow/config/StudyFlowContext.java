@@ -1,7 +1,10 @@
 package com.studyflow.config;
 
 import com.studyflow.interfaces.Storage;
+import com.studyflow.model.AttendanceEntry;
+import com.studyflow.model.AttendanceTarget;
 import com.studyflow.model.Note;
+import com.studyflow.model.StudyMaterial;
 import com.studyflow.model.Subject;
 import com.studyflow.model.Task;
 import com.studyflow.model.UserSettings;
@@ -18,6 +21,7 @@ import com.studyflow.integrations.OpenAiProvider;
 import com.studyflow.repository.MemoryStorage;
 import com.studyflow.repository.NoteRepository;
 import com.studyflow.repository.SettingsRepository;
+import com.studyflow.repository.StorageException;
 import com.studyflow.repository.StudyHistoryRepository;
 import com.studyflow.repository.SubjectRepository;
 import com.studyflow.repository.TaskRepository;
@@ -37,8 +41,11 @@ import java.time.Clock;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /** Owns a locked local profile and assembles its storage-backed application services. */
 public final class StudyFlowContext implements AutoCloseable {
@@ -70,8 +77,8 @@ public final class StudyFlowContext implements AutoCloseable {
         aiProvider = OpenAiProvider.fromEnvironment();
         studyAssistant = new StudyAssistant(materialLibrary, aiProvider, new StudyHistoryRepository(storage), clock);
         integrations = new LocalIntegrations(new IntegrationRepository(storage), new GoogleCalendar(), clock);
-        attendanceService = new AttendanceService(new AttendanceRepository(storage),
-                new AttendanceTargetRepository(storage), repositories.subjects()::load,
+        attendanceService = new AttendanceService(repositories.attendance(),
+                repositories.attendanceTargets(), repositories.subjects()::load,
                 () -> settings().getDefaultAttendanceTarget());
         Function<String, Optional<Subject>> subjects = repositories.subjects()::findById;
         taskManager = validate(directory, "tasks/tasks.json",
@@ -87,7 +94,8 @@ public final class StudyFlowContext implements AutoCloseable {
         searchService = new SearchService(taskManager, subjectManager, noteManager, workspaceManager);
         focusRepository = new FocusRepository(storage);
         focusRepository.load();
-        attendanceService.snapshot();
+        validateAttendanceReferences(directory, repositories.subjects().load(),
+                repositories.attendance().load(), repositories.attendanceTargets().load());
     }
 
     public static StudyFlowContext open(Path dataDirectory) throws IOException {
@@ -120,6 +128,8 @@ public final class StudyFlowContext implements AutoCloseable {
             List<Task> tasks = repositories.tasks().load();
             List<Note> notes = repositories.notes().load();
             validateProfile(directory, tasks, subjects, workspaces, notes, settings);
+            validateAttendanceReferences(directory, subjects,
+                    repositories.attendance().load(), repositories.attendanceTargets().load());
 
             return switch (type) {
                 case "tasks" -> repositories.tasks().backup();
@@ -127,6 +137,10 @@ public final class StudyFlowContext implements AutoCloseable {
                 case "workspaces" -> repositories.workspaces().backup();
                 case "notes" -> repositories.notes().backup();
                 case "settings" -> repositories.settings().backup();
+                case "attendance" -> repositories.attendance().backup();
+                case "attendance-targets" -> repositories.attendanceTargets().backup();
+                case "focus" -> new FocusRepository(storage).backup();
+                case "integrations" -> new IntegrationRepository(storage).backup();
                 default -> throw new IllegalArgumentException("Unknown record type for backup: " + type);
             };
         }
@@ -140,9 +154,15 @@ public final class StudyFlowContext implements AutoCloseable {
                 case "tasks" -> repositories.tasks().restore(backup, tasks -> validateProfile(directory,
                         tasks, repositories.subjects().load(), repositories.workspaces().load(),
                         repositories.notes().load(), repositories.settings().load()));
-                case "subjects" -> repositories.subjects().restore(backup, subjects -> validateProfile(directory,
-                        repositories.tasks().load(), subjects, repositories.workspaces().load(),
-                        repositories.notes().load(), repositories.settings().load()));
+                case "subjects" -> repositories.subjects().restore(backup, subjects -> {
+                    validateProfile(directory, repositories.tasks().load(), subjects, repositories.workspaces().load(),
+                            repositories.notes().load(), repositories.settings().load());
+                    validateAttendanceReferences(directory, subjects,
+                            repositories.attendance().load(), repositories.attendanceTargets().load());
+                    validateSubjectReferences(directory.resolve("materials/materials.json"), subjectIds(subjects),
+                            new MaterialRepository(storage).load().stream()
+                                    .map(StudyMaterial::subjectId).filter(Objects::nonNull));
+                });
                 case "workspaces" -> repositories.workspaces().restore(backup, workspaces -> validateProfile(directory,
                         repositories.tasks().load(), repositories.subjects().load(), workspaces,
                         repositories.notes().load(), repositories.settings().load()));
@@ -152,9 +172,36 @@ public final class StudyFlowContext implements AutoCloseable {
                 case "settings" -> repositories.settings().restore(backup, settings -> validateProfile(directory,
                         repositories.tasks().load(), repositories.subjects().load(), repositories.workspaces().load(),
                         repositories.notes().load(), settings));
+                case "attendance" -> repositories.attendance().restore(backup, entries ->
+                        validateSubjectReferences(directory.resolve("attendance/classes.json"),
+                                subjectIds(repositories.subjects().load()), entries.stream().map(AttendanceEntry::subjectId)));
+                case "attendance-targets" -> repositories.attendanceTargets().restore(backup, targets ->
+                        validateSubjectReferences(directory.resolve("attendance/targets.json"),
+                                subjectIds(repositories.subjects().load()), targets.stream().map(AttendanceTarget::subjectId)));
+                case "focus" -> new FocusRepository(storage).restore(backup, records -> { });
+                case "integrations" -> new IntegrationRepository(storage).restore(backup, records -> { });
                 default -> throw new IllegalArgumentException("Unknown record type for recovery: " + type);
             }
         }
+    }
+
+    private static void validateAttendanceReferences(Path directory, List<Subject> subjects,
+                                                     List<AttendanceEntry> entries, List<AttendanceTarget> targets) {
+        Set<String> knownSubjects = subjectIds(subjects);
+        validateSubjectReferences(directory.resolve("attendance/classes.json"), knownSubjects,
+                entries.stream().map(AttendanceEntry::subjectId));
+        validateSubjectReferences(directory.resolve("attendance/targets.json"), knownSubjects,
+                targets.stream().map(AttendanceTarget::subjectId));
+    }
+
+    private static Set<String> subjectIds(List<Subject> subjects) {
+        return subjects.stream().map(Subject::getId).collect(Collectors.toUnmodifiableSet());
+    }
+
+    private static void validateSubjectReferences(Path path, Set<String> subjectIds, Stream<String> references) {
+        references.filter(id -> !subjectIds.contains(id)).findFirst().ifPresent(id -> {
+            throw new StorageException(path, "Unknown subject ID: " + id, null);
+        });
     }
 
     private static void validateProfile(Path directory, List<Task> tasks, List<Subject> subjects,
@@ -247,10 +294,12 @@ public final class StudyFlowContext implements AutoCloseable {
 
     private record ProfileRepositories(TaskRepository tasks, SubjectRepository subjects,
                                        WorkspaceRepository workspaces, NoteRepository notes,
-                                       SettingsRepository settings) {
+                                       SettingsRepository settings, AttendanceRepository attendance,
+                                       AttendanceTargetRepository attendanceTargets) {
         private ProfileRepositories(FileStorage storage) {
             this(new TaskRepository(storage), new SubjectRepository(storage), new WorkspaceRepository(storage),
-                    new NoteRepository(storage), new SettingsRepository(storage));
+                    new NoteRepository(storage), new SettingsRepository(storage), new AttendanceRepository(storage),
+                    new AttendanceTargetRepository(storage));
         }
     }
 }

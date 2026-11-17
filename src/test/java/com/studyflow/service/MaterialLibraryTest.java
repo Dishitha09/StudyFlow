@@ -2,6 +2,7 @@ package com.studyflow.service;
 
 import com.studyflow.config.StudyFlowContext;
 import com.studyflow.model.StudyMaterial;
+import com.studyflow.repository.StorageException;
 import com.studyflow.service.StudyAssistant.Mode;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -93,6 +94,68 @@ class MaterialLibraryTest {
     }
 
     @Test
+    void invalidCachePathLeavesTheEntryAndPdfIntactAfterReopen() throws IOException {
+        Path profile = directory.resolve("deletion-profile");
+        Path original = writePdf("protected.pdf", "An invalid cache must not orphan the original.");
+        StudyMaterial material;
+        Path managedPdf;
+        Path cache;
+        String previousCache;
+        try (StudyFlowContext context = StudyFlowContext.open(profile)) {
+            MaterialLibrary library = context.materialLibrary();
+            material = library.upload(original, "Protected", "", null);
+            managedPdf = library.openPath(material.id());
+            cache = profile.resolve("materials/index").resolve(material.id() + ".txt");
+            previousCache = Files.readString(cache);
+            Files.delete(cache);
+            Files.createDirectory(cache);
+            Files.writeString(cache.resolve("keep.txt"), "Keep this file intact.");
+
+            IOException failure = assertThrows(IOException.class, () -> library.delete(material.id()));
+            assertEquals(List.of(material), library.findAll());
+            assertTrue(failure.getMessage().contains("No material was removed"));
+            assertEquals(-1, Files.mismatch(original, managedPdf));
+            assertEquals("Keep this file intact.", Files.readString(cache.resolve("keep.txt")));
+            assertNoRemovalFiles(managedPdf.getParent(), cache.getParent());
+        }
+        try (StudyFlowContext reopened = StudyFlowContext.open(profile)) {
+            MaterialLibrary library = reopened.materialLibrary();
+            assertEquals(List.of(material), library.findAll());
+            assertEquals(-1, Files.mismatch(original, library.openPath(material.id())));
+            Files.delete(cache.resolve("keep.txt"));
+            Files.delete(cache);
+            Files.writeString(cache, previousCache);
+            library.delete(material.id());
+            assertTrue(library.findAll().isEmpty());
+            assertFalse(Files.exists(cache));
+            assertFalse(Files.exists(managedPdf));
+            assertTrue(Files.isRegularFile(original));
+            assertNoRemovalFiles(managedPdf.getParent(), cache.getParent());
+        }
+    }
+
+    @Test
+    void failedMetadataSaveRestoresBothManagedFiles() throws IOException {
+        Path profile = directory.resolve("metadata-failure-profile");
+        Path original = writePdf("rollback.pdf", "A failed save restores the searchable text.");
+        try (StudyFlowContext context = StudyFlowContext.open(profile)) {
+            MaterialLibrary library = context.materialLibrary();
+            StudyMaterial material = library.upload(original, "Rollback", "", null);
+            Path managedPdf = library.openPath(material.id());
+            Path cache = profile.resolve("materials/index").resolve(material.id() + ".txt");
+            Path backups = profile.resolve("backups");
+            Files.delete(backups);
+            Files.writeString(backups, "Simulated backup write failure.");
+
+            assertThrows(StorageException.class, () -> library.delete(material.id()));
+            assertEquals(List.of(material), library.findAll());
+            assertEquals(-1, Files.mismatch(original, managedPdf));
+            assertEquals(1, library.retrieve("searchable", material.id()).size());
+            assertNoRemovalFiles(managedPdf.getParent(), cache.getParent());
+        }
+    }
+
+    @Test
     void rejectsMalformedPdfWithoutCommittingAMaterial() throws IOException {
         Path invalid = Files.writeString(directory.resolve("broken.pdf"), "Test file with no PDF structure.");
         Path profile = directory.resolve("profile");
@@ -180,6 +243,14 @@ class MaterialLibraryTest {
             assertEquals("damaged history", Files.readString(snapshot));
             assistant.clearHistory();
             assertTrue(assistant.history().isEmpty());
+        }
+    }
+
+    private static void assertNoRemovalFiles(Path... directories) throws IOException {
+        for (Path directory : directories) {
+            try (var paths = Files.list(directory)) {
+                assertTrue(paths.noneMatch(path -> path.getFileName().toString().endsWith(".removing")));
+            }
         }
     }
 

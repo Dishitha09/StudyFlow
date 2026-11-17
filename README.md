@@ -74,9 +74,9 @@ By default, StudyFlow uses the `data` directory in the working directory. It wri
 mvn exec:java "-Dexec.args=--data-dir 'C:/StudyFlow data'"
 ```
 
-When a saved file changes, StudyFlow keeps a timestamped copy of the preceding valid file under `data/backups`. Saving requires a filesystem that supports atomic file replacement.
+When an academic or settings file changes, StudyFlow keeps a timestamped copy of the preceding valid file under `data/backups`. Study Assistant history is an exception, so clearing it does not leave automatic history copies. Saving requires a filesystem that supports atomic file replacement.
 
-To back up the latest saved file, close StudyFlow and select its type (`tasks`, `subjects`, `workspaces`, `notes` or `settings`).
+To back up the latest saved file, close StudyFlow and select its type: `tasks`, `subjects`, `workspaces`, `notes`, `settings`, `attendance`, `attendance-targets`, `focus`, or `integrations`. Close StudyFlow and copy the entire profile for a backup that includes your managed PDFs.
 
 ```powershell
 mvn exec:java '-Dexec.args=--backup tasks'
@@ -91,7 +91,7 @@ $backup = (Resolve-Path 'data/backups/tasks-manual-<timestamp>-<uuid>.json').Pat
 mvn exec:java "-Dexec.args=--restore tasks '$backup'"
 ```
 
-Use `--data-dir` before `--restore` when recovering an alternate profile. Restart StudyFlow after a successful restore.
+Use `--data-dir` before `--restore` when recovering an alternate profile. StudyFlow rejects a subject restore that would strand referenced academic records. Restart StudyFlow after a successful restore.
 
 ## Project documentation
 

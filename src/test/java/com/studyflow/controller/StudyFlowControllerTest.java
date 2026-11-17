@@ -14,6 +14,7 @@ import com.studyflow.model.TaskType;
 import com.studyflow.model.Theme;
 import com.studyflow.service.TaskFilter;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Clock;
 import java.time.LocalDate;
@@ -128,6 +129,35 @@ class StudyFlowControllerTest {
             assertEquals("Term", unchanged.getName());
             assertEquals("Original", unchanged.getDescription());
             assertEquals(List.of(subject.getId()), unchanged.getSubjectIds());
+        }
+    }
+
+    @Test
+    void damageInOptionalStoresDoesNotChangeCoreSaveOrSearchOutcome() throws Exception {
+        Path links = profile.resolve("integrations/links.json");
+        Path materials = profile.resolve("materials/materials.json");
+        try (StudyFlowContext context = StudyFlowContext.open(profile, CLOCK)) {
+            Files.writeString(links, "{bad links");
+            Files.writeString(materials, "{bad materials");
+            StudyFlowController controller = new StudyFlowController(context, Runnable::run, CLOCK);
+            Records initial = load(controller);
+            assertNotNull(initial.integrationsWarning());
+            assertNotNull(initial.materialsWarning());
+            assertTrue(initial.playlists().isEmpty());
+
+            Records after = change(controller, () -> controller.createTask(new TaskDraft("Graph practice", "",
+                    null, TODAY, Priority.HIGH, new TaskDraft.General())));
+            assertEquals(1, after.dashboard().total());
+
+            var search = new CompletableFuture<StudyFlowController.SearchData>();
+            controller.searchAll("Graph", search::complete, failure(search));
+            assertEquals(1, search.get(5, TimeUnit.SECONDS).records().tasks().size());
+            assertNotNull(search.join().materialsWarning());
+            assertEquals("{bad links", Files.readString(links));
+            assertEquals("{bad materials", Files.readString(materials));
+        }
+        try (StudyFlowContext context = StudyFlowContext.open(profile, CLOCK)) {
+            assertEquals("Graph practice", context.taskManager().findAll().getFirst().getTitle());
         }
     }
 

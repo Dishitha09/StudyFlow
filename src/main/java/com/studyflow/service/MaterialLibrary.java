@@ -7,8 +7,11 @@ import com.studyflow.utils.SearchText;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.time.Clock;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -89,7 +92,7 @@ public final class MaterialLibrary {
         return findAll().stream().anyMatch(material -> subjectId.equals(material.subjectId()));
     }
 
-    public List<Passage> retrieve(String query, String materialId) throws IOException {
+    public synchronized List<Passage> retrieve(String query, String materialId) throws IOException {
         List<String> words = TERMS.matcher(query == null ? "" : query.toLowerCase(Locale.ROOT)).results()
                 .map(result -> result.group()).filter(word -> !COMMON.contains(word)).distinct().toList();
         List<StudyMaterial> candidates = materialId == null ? findAll() : List.of(require(materialId));
@@ -120,7 +123,7 @@ public final class MaterialLibrary {
                 .limit(12).map(ScoredPassage::passage).toList();
     }
 
-    public Path openPath(String id) throws IOException {
+    public synchronized Path openPath(String id) throws IOException {
         Path path = pdfPath(require(id).id());
         if (!Files.isRegularFile(path)) {
             throw new IOException("The stored PDF is missing.");
@@ -128,11 +131,35 @@ public final class MaterialLibrary {
         return path;
     }
 
-    public void delete(String id) throws IOException {
-        require(id);
-        materials.delete(id);
-        Files.deleteIfExists(cachePath(id));
-        Files.deleteIfExists(pdfPath(id));
+    public synchronized void delete(String id) throws IOException {
+        StudyMaterial material = require(id);
+        Path pdf = pdfPath(material.id());
+        Path cache = cachePath(material.id());
+        Path stagedPdf = null;
+        Path stagedCache = null;
+        try {
+            stagedPdf = stageRemoval(pdf);
+            stagedCache = stageRemoval(cache);
+            if (!materials.delete(material.id())) {
+                throw new IOException("The study material changed. Reload the library and try again.");
+            }
+        } catch (IOException | RuntimeException failure) {
+            boolean cacheRestored = restoreStaged(stagedCache, cache, failure);
+            boolean pdfRestored = restoreStaged(stagedPdf, pdf, failure);
+            if (!cacheRestored || !pdfRestored) {
+                throw new IOException("Removal failed and a staged file could not be restored. "
+                        + "The staged copy was kept in the StudyFlow materials folder.", failure);
+            }
+            throw failure;
+        }
+
+        IOException cleanup = new IOException("The study material was removed, but temporary files could not be "
+                + "deleted. Close the PDF viewer and check the StudyFlow materials folder.");
+        clean(stagedCache, cleanup);
+        clean(stagedPdf, cleanup);
+        if (cleanup.getSuppressed().length != 0) {
+            throw cleanup;
+        }
     }
 
     private StudyMaterial require(String id) {
@@ -141,6 +168,45 @@ public final class MaterialLibrary {
 
     private Path pdfPath(String id) { return files.resolve(id + ".pdf"); }
     private Path cachePath(String id) { return index.resolve(id + ".txt"); }
+
+    private static Path stageRemoval(Path source) throws IOException {
+        BasicFileAttributes attributes;
+        try {
+            attributes = Files.readAttributes(source, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+        } catch (NoSuchFileException missing) {
+            return null;
+        } catch (IOException | SecurityException denied) {
+            throw new IOException("Cannot access a managed material file. No material was removed.", denied);
+        }
+        if (!attributes.isRegularFile()) {
+            throw new IOException("A managed material file is not a regular file. No material was removed.");
+        }
+        Path staged = null;
+        try {
+            staged = Files.createTempFile(source.getParent(), source.getFileName() + ".", ".removing");
+            return Files.move(source, staged, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+        } catch (IOException | SecurityException failure) {
+            clean(staged, failure);
+            throw new IOException("Cannot prepare the material for removal. Close the PDF viewer and try again.",
+                    failure);
+        }
+    }
+
+    private static boolean restoreStaged(Path staged, Path target, Throwable failure) {
+        if (staged == null) {
+            return true;
+        }
+        try {
+            if (Files.exists(target, LinkOption.NOFOLLOW_LINKS)) {
+                throw new IOException("A new file occupies the original material path.");
+            }
+            Files.move(staged, target, StandardCopyOption.ATOMIC_MOVE);
+            return true;
+        } catch (IOException | SecurityException restoreError) {
+            failure.addSuppressed(restoreError);
+            return false;
+        }
+    }
 
     private static void extract(Path pdf, Path cache) throws IOException {
         try (var document = Loader.loadPDF(pdf.toFile());
@@ -175,9 +241,12 @@ public final class MaterialLibrary {
     }
 
     private static void clean(Path path, Throwable failure) {
+        if (path == null) {
+            return;
+        }
         try {
             Files.deleteIfExists(path);
-        } catch (IOException cleanupError) {
+        } catch (IOException | SecurityException cleanupError) {
             failure.addSuppressed(cleanupError);
         }
     }

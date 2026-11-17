@@ -312,10 +312,10 @@ public final class MainFrame extends JFrame {
         kanban.showTasks(records.allTasks(), taskSubjects);
         focus.showData(records.allTasks(), taskSubjects, records.settings(), records.completedSessions());
         attendance.showData(records.attendance());
-        materials.showData(records.materials(), taskSubjects);
+        materials.showData(records.materials(), taskSubjects, records.materialsWarning());
         materials.setRemoteAvailable(records.remoteAi());
         integrations.showData(records.allTasks(), taskSubjects, records.googleConfigured(), records.googleConnected(),
-                records.linkedCalendarTasks(), records.remoteAi(), records.playlists());
+                records.linkedCalendarTasks(), records.remoteAi(), records.playlists(), records.integrationsWarning());
         var summary = records.dashboard();
         analytics.setText("Tasks completed    " + summary.completed() + " / " + summary.total()
                 + "\nTasks pending       " + summary.pending()
@@ -500,6 +500,8 @@ public final class MainFrame extends JFrame {
                         item.fileName())));
                 search.showResults(rows);
                 setBusy(false);
+                showFeedback(data.materialsWarning() == null ? " " : data.materialsWarning(),
+                        data.materialsWarning() != null);
             }
         }, this::showFailure);
     }

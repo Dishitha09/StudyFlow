@@ -76,8 +76,12 @@ public final class StudyFlowController {
     }
 
     public void searchAll(String text, Consumer<SearchData> success, Consumer<String> failure) {
-        submit(() -> new SearchData(context.searchService().search(text), text.isBlank() ? List.of()
-                : context.materialLibrary().search(text)), success, failure);
+        submit(() -> {
+            var academic = context.searchService().search(text);
+            var pdf = optional(() -> text.isBlank() ? List.<StudyMaterial>of() : context.materialLibrary().search(text),
+                    List.<StudyMaterial>of(), "desktop.materials.unavailable", MATERIALS_UNAVAILABLE);
+            return new SearchData(academic, pdf.value(), pdf.warning());
+        }, success, failure);
     }
 
     public void study(String text, String id, StudyAssistant.Mode mode, boolean remote, boolean saveHistory,
@@ -330,13 +334,35 @@ public final class StudyFlowController {
         DashboardData dashboard = new DashboardData(today, all.size(), completed, all.size() - completed, overdue,
                 assignments, tasks.today(), upcoming, tasks.smartPriority(), subjects);
         UserSettings settings = context.settings();
+        var pdf = optional(context.materialLibrary()::findAll, List.<StudyMaterial>of(),
+                "desktop.materials.unavailable", MATERIALS_UNAVAILABLE);
+        var links = optional(() -> new IntegrationLinks(context.integrations().linkedCalendarTasks(),
+                context.integrations().playlists()), new IntegrationLinks(Set.of(), List.of()),
+                "desktop.integrations.unavailable", INTEGRATIONS_UNAVAILABLE);
         return new Records(dashboard, taskRows(query), subjects, context.workspaceManager().findAll(),
                 context.noteManager().findAll(), settings.getTheme(), all, settings,
                 context.focusRepository().load().size(), context.attendanceService().snapshot(),
-                context.materialLibrary().findAll(), context.studyAssistant().remoteAvailable(),
+                pdf.value(), context.studyAssistant().remoteAvailable(),
                 context.integrations().google().configured(), context.integrations().google().connected(),
-                context.integrations().linkedCalendarTasks(), context.integrations().playlists());
+                links.value().calendarTasks(), links.value().playlists(), pdf.warning(), links.warning());
     }
+
+    private static final String MATERIALS_UNAVAILABLE =
+            "Study Materials could not read its local library. The file was kept for recovery.";
+    private static final String INTEGRATIONS_UNAVAILABLE =
+            "Saved integration links could not be read. The file was kept for recovery.";
+
+    private static <T> OptionalSnapshot<T> optional(Supplier<T> read, T fallback, String event, String warning) {
+        try {
+            return new OptionalSnapshot<>(read.get(), null);
+        } catch (com.studyflow.repository.StorageException error) {
+            AppLog.failure(event, error);
+            return new OptionalSnapshot<>(fallback, warning);
+        }
+    }
+
+    private record OptionalSnapshot<T>(T value, String warning) { }
+    private record IntegrationLinks(Set<String> calendarTasks, List<String> playlists) { }
 
     private List<Task> taskRows(TaskQuery query) {
         TaskManager tasks = context.taskManager();
@@ -392,8 +418,9 @@ public final class StudyFlowController {
                           List<Workspace> workspaces, List<Note> notes, Theme theme, List<Task> allTasks,
                           UserSettings settings, int completedSessions, AttendanceService.Snapshot attendance,
                           List<StudyMaterial> materials, boolean remoteAi, boolean googleConfigured,
-                          boolean googleConnected, Set<String> linkedCalendarTasks, List<String> playlists) { }
+                          boolean googleConnected, Set<String> linkedCalendarTasks, List<String> playlists,
+                          String materialsWarning, String integrationsWarning) { }
 
     public record SearchData(com.studyflow.service.SearchService.SearchResults records,
-                             List<StudyMaterial> materials) { }
+                             List<StudyMaterial> materials, String materialsWarning) { }
 }

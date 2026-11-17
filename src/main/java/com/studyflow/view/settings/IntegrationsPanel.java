@@ -86,6 +86,7 @@ public final class IntegrationsPanel extends JPanel {
     private boolean googleConnected;
     private boolean aiConfigured;
     private boolean busy;
+    private boolean linksAvailable = true;
     private Set<String> linkedTasks = Set.of();
     private Map<String, String> subjects = Map.of();
 
@@ -104,14 +105,18 @@ public final class IntegrationsPanel extends JPanel {
     }
 
     public void showData(List<Task> items, List<Subject> courses, boolean googleConfigured, boolean googleConnected,
-                         Set<String> linkedTasks, boolean aiConfigured, List<String> playlistLinks) {
+                         Set<String> linkedTasks, boolean aiConfigured, List<String> playlistLinks,
+                         String storageWarning) {
         this.googleConfigured = googleConfigured;
         this.googleConnected = googleConnected;
         this.aiConfigured = aiConfigured;
+        linksAvailable = storageWarning == null;
         this.linkedTasks = Set.copyOf(linkedTasks);
         subjects = courses.stream().collect(Collectors.toMap(Subject::getId,
                 course -> course.getName() + " (" + course.getSubjectCode() + ")"));
-        if (googleConnected) {
+        if (!linksAvailable) {
+            googleStatus.setText("Local link file unavailable. Calendar file export still works.");
+        } else if (googleConnected) {
             googleStatus.setText("Connected to your primary Google calendar for this StudyFlow session.");
         } else if (googleConfigured) {
             googleStatus.setText("Ready to connect. Sign in to Google to sync deadlines.");
@@ -120,7 +125,10 @@ public final class IntegrationsPanel extends JPanel {
         }
         aiStatus.setText(aiConfigured ? "Configured · Test model access."
                 : "Unconfigured · Set OPENAI_API_KEY to enable remote study requests.");
-        spotifyStatus.setText(playlistLinks.isEmpty() ? "No playlist links saved."
+        googleStatus.setToolTipText(storageWarning);
+        spotifyStatus.setToolTipText(storageWarning);
+        spotifyStatus.setText(!linksAvailable ? "Saved links unavailable. The local file was kept for recovery."
+                : playlistLinks.isEmpty() ? "No playlist links saved."
                 : playlistLinks.size() + (playlistLinks.size() == 1 ? " saved playlist" : " saved playlists"));
         refreshTasks(items.stream().filter(task -> task.getDueDate() != null || linkedTasks.contains(task.getId()))
                 .sorted().toList());
@@ -359,11 +367,12 @@ public final class IntegrationsPanel extends JPanel {
         Task item = singleTask();
         boolean selectedPlaylist = playlists.getSelectedValue() != null;
         selection.setText(dated ? datedCount + " dated selected" : "No dated tasks selected");
-        connect.setEnabled(!busy && googleConfigured && !googleConnected);
+        connect.setEnabled(!busy && linksAvailable && googleConfigured && !googleConnected);
         disconnect.setEnabled(!busy && googleConnected);
         testGoogle.setEnabled(!busy && googleConnected);
-        sync.setEnabled(!busy && googleConnected && dated);
-        removeEvent.setEnabled(!busy && googleConnected && item != null && linkedTasks.contains(item.getId()));
+        sync.setEnabled(!busy && linksAvailable && googleConnected && dated);
+        removeEvent.setEnabled(!busy && linksAvailable && googleConnected && item != null
+                && linkedTasks.contains(item.getId()));
         export.setEnabled(!busy && dated);
         selectDated.setEnabled(!busy && IntStream.range(0, taskRows.getSize())
                 .anyMatch(index -> taskRows.get(index).getDueDate() != null));
@@ -372,8 +381,8 @@ public final class IntegrationsPanel extends JPanel {
         setup.setEnabled(!busy);
         openGoogle.setEnabled(!busy);
         testAi.setEnabled(!busy && aiConfigured);
-        playlistUrl.setEnabled(!busy);
-        addPlaylist.setEnabled(!busy && !playlistUrl.getText().isBlank());
+        playlistUrl.setEnabled(!busy && linksAvailable);
+        addPlaylist.setEnabled(!busy && linksAvailable && !playlistUrl.getText().isBlank());
         openPlaylist.setEnabled(!busy && selectedPlaylist);
         removePlaylist.setEnabled(!busy && selectedPlaylist);
     }

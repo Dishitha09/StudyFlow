@@ -87,6 +87,7 @@ public final class MaterialPanel extends JPanel {
     private List<String> matchingIds;
     private boolean busy;
     private boolean remoteAvailable;
+    private String storageWarning;
 
     public MaterialPanel(Actions actions) {
         super(new BorderLayout(0, 14));
@@ -109,6 +110,15 @@ public final class MaterialPanel extends JPanel {
     }
 
     public void showData(List<StudyMaterial> materials, List<Subject> subjects) {
+        showData(materials, subjects, null);
+    }
+
+    public void showData(List<StudyMaterial> materials, List<Subject> subjects, String storageWarning) {
+        this.storageWarning = storageWarning;
+        tabs.setEnabledAt(ASSISTANT_TAB, storageWarning == null);
+        if (storageWarning != null && tabs.getSelectedIndex() == ASSISTANT_TAB) {
+            tabs.setSelectedIndex(0);
+        }
         this.materials = List.copyOf(materials);
         this.subjects = List.copyOf(subjects);
         subjectNames = subjects.stream().collect(Collectors.toMap(Subject::getId, Subject::getName));
@@ -153,8 +163,10 @@ public final class MaterialPanel extends JPanel {
         if (library.isSelectionEmpty() && !materialRows.isEmpty()) {
             library.setSelectedIndex(0);
         }
-        libraryStatus.setText(matches.isEmpty() ? (query.getText().isBlank() ? "No PDFs in your library."
+        libraryStatus.setText(storageWarning != null ? "Library unavailable. The local file was kept for recovery."
+                : matches.isEmpty() ? (query.getText().isBlank() ? "No PDFs in your library."
                 : "No matching PDFs.") : matches.size() + (matches.size() == 1 ? " PDF" : " PDFs"));
+        libraryStatus.setToolTipText(storageWarning);
         updateSelection();
     }
 
@@ -459,10 +471,11 @@ public final class MaterialPanel extends JPanel {
     }
 
     private void updateControls() {
-        boolean hasMaterial = !busy && selectedId() != null;
-        upload.setEnabled(!busy);
-        query.setEnabled(!busy);
-        search.setEnabled(!busy);
+        boolean libraryReady = !busy && storageWarning == null;
+        boolean hasMaterial = libraryReady && selectedId() != null;
+        upload.setEnabled(libraryReady);
+        query.setEnabled(libraryReady);
+        search.setEnabled(libraryReady);
         open.setEnabled(hasMaterial);
         delete.setEnabled(hasMaterial);
         studySelected.setEnabled(hasMaterial);
@@ -471,7 +484,7 @@ public final class MaterialPanel extends JPanel {
         scope.setEnabled(!busy);
         remote.setEnabled(!busy && remoteAvailable);
         saveHistory.setEnabled(!busy);
-        generate.setEnabled(!busy && !materials.isEmpty());
+        generate.setEnabled(libraryReady && !materials.isEmpty());
         sourceOpen.setEnabled(!busy && sources.getSelectedValue() != null);
     }
 
