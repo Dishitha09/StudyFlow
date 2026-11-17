@@ -43,6 +43,7 @@ import javax.swing.filechooser.FileNameExtensionFilter;
 public final class IntegrationsPanel extends JPanel {
     public interface Actions {
         void connect();
+        void cancelConnect();
         void disconnect();
         void testGoogle();
         void openGoogleSetup();
@@ -63,6 +64,7 @@ public final class IntegrationsPanel extends JPanel {
     private final JLabel aiStatus = ViewStyle.muted("Checking configuration…");
     private final JLabel spotifyStatus = ViewStyle.muted("Opens saved playlists in Spotify.");
     private final JButton connect = new JButton("Connect Google");
+    private final JButton cancelConnect = new JButton("Cancel sign-in");
     private final JButton disconnect = new JButton("Disconnect");
     private final JButton testGoogle = new JButton("Test connection");
     private final JButton setup = new JButton("Setup help");
@@ -84,6 +86,7 @@ public final class IntegrationsPanel extends JPanel {
     private final JButton removePlaylist = new JButton("Remove");
     private boolean googleConfigured;
     private boolean googleConnected;
+    private boolean googleConnecting;
     private boolean aiConfigured;
     private boolean busy;
     private boolean linksAvailable = true;
@@ -141,6 +144,11 @@ public final class IntegrationsPanel extends JPanel {
         updateControls();
     }
 
+    public void setConnecting(boolean connecting) {
+        googleConnecting = connecting;
+        updateControls();
+    }
+
     private JPanel googleCard() {
         JPanel card = card();
         JPanel inner = transparent(new BorderLayout(0, 9));
@@ -151,10 +159,12 @@ public final class IntegrationsPanel extends JPanel {
         heading.add(googleStatus, BorderLayout.CENTER);
         JPanel connection = actions();
         bind(connect, "integrationsGoogleConnect", actions::connect);
+        bind(cancelConnect, "integrationsGoogleCancel", actions::cancelConnect);
         bind(disconnect, "integrationsGoogleDisconnect", actions::disconnect);
         bind(testGoogle, "integrationsGoogleTest", actions::testGoogle);
         bind(setup, "integrationsGoogleHelp", this::showGoogleSetup);
         connection.add(connect);
+        connection.add(cancelConnect);
         connection.add(disconnect);
         connection.add(testGoogle);
         connection.add(setup);
@@ -368,6 +378,8 @@ public final class IntegrationsPanel extends JPanel {
         boolean selectedPlaylist = playlists.getSelectedValue() != null;
         selection.setText(dated ? datedCount + " dated selected" : "No dated tasks selected");
         connect.setEnabled(!busy && linksAvailable && googleConfigured && !googleConnected);
+        cancelConnect.setVisible(googleConnecting);
+        cancelConnect.setEnabled(googleConnecting);
         disconnect.setEnabled(!busy && googleConnected);
         testGoogle.setEnabled(!busy && googleConnected);
         sync.setEnabled(!busy && linksAvailable && googleConnected && dated);

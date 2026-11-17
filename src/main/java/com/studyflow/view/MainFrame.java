@@ -416,6 +416,7 @@ public final class MainFrame extends JFrame {
         materials.setRemoteAvailable(records.remoteAi());
         integrations.showData(records.allTasks(), taskSubjects, records.googleConfigured(), records.googleConnected(),
                 records.linkedCalendarTasks(), records.remoteAi(), records.playlists(), records.integrationsWarning());
+        integrations.setConnecting(false);
         if (activePage == Page.ANALYTICS) refreshAnalytics(analytics.range());
     }
 
@@ -479,11 +480,20 @@ public final class MainFrame extends JFrame {
                 controller.load(taskQuery, current -> {
                     if (!closing) {
                         showRecords(current);
-                        showFailure(message);
+                        handleGoogleFailure(message);
                     }
-                }, ignored -> showFailure(message));
+                }, ignored -> handleGoogleFailure(message));
             }
         });
+    }
+
+    private void handleGoogleFailure(String message) {
+        if (closing) return;
+        integrations.setConnecting(false);
+        if ("Google sign-in was cancelled.".equals(message)) {
+            setBusy(false);
+            showFeedback(message, false);
+        } else showFailure(message);
     }
 
     private void showFailure(String message) {
@@ -527,6 +537,7 @@ public final class MainFrame extends JFrame {
         closing = true;
         reminderTimer.stop();
         if (cancelPdfImport != null) cancelPdfImport.set(true);
+        controller.cancelGoogleConnection();
         focus.stop();
         setBusy(true);
         showFeedback("Closing…", false);
@@ -664,8 +675,15 @@ public final class MainFrame extends JFrame {
     private final class IntegrationActions implements IntegrationsPanel.Actions {
         @Override public void connect() {
             if (!busy && !closing) {
+                integrations.setConnecting(true);
                 changeGoogle(controller::connectGoogle, "Google Calendar connected.");
                 showFeedback("Complete Google sign-in in your browser to finish connecting.", false);
+            }
+        }
+        @Override public void cancelConnect() {
+            if (controller.cancelGoogleConnection()) {
+                integrations.setConnecting(false);
+                showFeedback("Cancelling Google sign-in…", false);
             }
         }
         @Override public void disconnect() { change(controller::disconnectGoogle, "Google Calendar disconnected.", null); }

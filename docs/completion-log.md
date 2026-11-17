@@ -52,3 +52,10 @@
 - Verification: **177 tests passed**, no failures/errors/skips. Tested real persisted completion, duplicate updates, backups and recurrence, timezone boundaries, focus totals, and empty attendance. The native journey sets a custom date range excluding the new completion and checks that current inventory still shows it. The compact chart layout was repaired and rechecked in both themes at all four dimensions.
 - Screenshots: [light 1366×768](screenshots/completion/analytics-light-1366x768.png), [compact dark](screenshots/completion/analytics-dark-1024x700.png), [logical 1920×1080 dark](screenshots/completion/analytics-dark-1920x1080.png).
 - Gate: passed. Per-day/week activity counts the latest known completion for each surviving top-level task, independently of its current status. Phase 7 exercises the external boundaries with mocks.
+
+## Phase 7 · Integration and file safety
+
+- Files: `GoogleCalendar`, `CalendarDetails`, `CalendarExport`, `LocalIntegrations`'s desktop wiring, `IntegrationsPanel`, managed PDF path checks, `GoogleCalendarLifecycleTest`, `CalendarAndSpotifyTest` and `tools/qa/ManagedPathSmoke.java`.
+- Why: discard expired or revoked calendar sessions, support browser-sign-in cancellation, preserve event ownership and all-day boundaries, and keep redirected PDF directories outside managed writes. Credentials remain session/environment only.
+- Verification: **181 tests passed**, zero failures/errors/skips. A local loopback OAuth simulation verified state and PKCE; a fake transport verified create/update without duplication, ownership and idempotent delete, token refresh, revocation and reconnect. An independent fixture parser checked escaped text and inclusive start/exclusive end of an all-day `.ics` event. The Windows junction smoke confirmed refusal before any external writes. [Settings integrations](screenshots/completion/integrations-light-1366x768.png) is a real unauthenticated UI capture.
+- Gate: passed for mocked and offline behavior. Live Google and OpenAI checks were not performed.

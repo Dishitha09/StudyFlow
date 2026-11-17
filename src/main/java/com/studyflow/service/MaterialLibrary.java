@@ -33,8 +33,9 @@ public final class MaterialLibrary {
 
     public MaterialLibrary(Path directory, Repository<StudyMaterial> materials, Predicate<String> subjectExists,
                            Clock clock) {
-        files = directory.resolve("files");
-        index = directory.resolve("index");
+        Path managed = directory.toAbsolutePath().normalize();
+        files = managed.resolve("files");
+        index = managed.resolve("index");
         this.materials = materials;
         this.subjectExists = subjectExists;
         this.clock = clock;
@@ -59,8 +60,10 @@ public final class MaterialLibrary {
         StudyMaterial material = new StudyMaterial(IdGenerator.next(), title, source.getFileName().toString(),
                 description, subjectId, clock.instant());
         requireExistingSubject(material);
+        requireSafeDirectories();
         Files.createDirectories(files);
         Files.createDirectories(index);
+        requireSafeDirectories();
         Path pdf = pdfPath(material.id());
         Path cache = cachePath(material.id());
         if (Files.exists(pdf, LinkOption.NOFOLLOW_LINKS) || Files.exists(cache, LinkOption.NOFOLLOW_LINKS)) {
@@ -177,6 +180,7 @@ public final class MaterialLibrary {
     }
 
     private LoadedIndex loadIndex(StudyMaterial item, String query) throws IOException {
+        requireSafeDirectories();
         Path pdf = pdfPath(item.id());
         Path cache = cachePath(item.id());
         PdfPassageIndex.SourceStamp stamp = PdfPassageIndex.stamp(pdf);
@@ -204,14 +208,16 @@ public final class MaterialLibrary {
     }
 
     public synchronized Path openPath(String id) throws IOException {
+        requireSafeDirectories();
         Path path = pdfPath(require(id).id());
-        if (!Files.isRegularFile(path)) {
-            throw new IOException("The stored PDF is missing.");
+        if (!Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)) {
+            throw new IOException("The stored PDF is missing or is not a regular managed file.");
         }
         return path;
     }
 
     public synchronized void delete(String id) throws IOException {
+        requireSafeDirectories();
         StudyMaterial material = require(id);
         Path pdf = pdfPath(material.id());
         Path cache = cachePath(material.id());
@@ -244,6 +250,17 @@ public final class MaterialLibrary {
 
     private StudyMaterial require(String id) {
         return materials.findById(id).orElseThrow(() -> new NoSuchElementException("Study material not found."));
+    }
+
+    private void requireSafeDirectories() throws IOException {
+        Path managed = files.getParent();
+        for (Path folder : List.of(managed, files, index)) {
+            if (Files.exists(folder, LinkOption.NOFOLLOW_LINKS)
+                    && (folder.getParent() == null || !Files.isDirectory(folder, LinkOption.NOFOLLOW_LINKS)
+                    || !folder.toRealPath().equals(folder.getParent().toRealPath().resolve(folder.getFileName())))) {
+                throw new IOException("StudyFlow won't read or change PDF files through a redirected library folder.");
+            }
+        }
     }
 
     private Path pdfPath(String id) { return files.resolve(id + ".pdf"); }

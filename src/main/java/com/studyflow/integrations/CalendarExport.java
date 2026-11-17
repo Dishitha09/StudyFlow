@@ -33,7 +33,7 @@ public final class CalendarExport {
                 append(output, "UID:" + escape(task.getId()) + "@studyflow");
                 append(output, "DTSTAMP:" + UTC.format(generatedAt));
                 append(output, "DTSTART;VALUE=DATE:" + task.getDueDate().format(DateTimeFormatter.BASIC_ISO_DATE));
-                append(output, "DTEND;VALUE=DATE:" + task.getDueDate().plusDays(1)
+                append(output, "DTEND;VALUE=DATE:" + CalendarDetails.exclusiveEnd(task.getDueDate())
                         .format(DateTimeFormatter.BASIC_ISO_DATE));
                 append(output, "SUMMARY:" + escape(task.getTitle()));
                 Subject subject = task.getSubjectId() == null ? null : subjects.get(task.getSubjectId());

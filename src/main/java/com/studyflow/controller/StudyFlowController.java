@@ -183,6 +183,7 @@ public final class StudyFlowController {
     }
 
     public void connectGoogle() { integration(() -> context.integrations().google().connect()); }
+    public boolean cancelGoogleConnection() { return context.integrations().google().cancelConnect(); }
     public void disconnectGoogle() { context.integrations().google().disconnect(); }
     public void testGoogle() { integration(() -> context.integrations().google().calendarId()); }
     public void openGoogleSetup() {

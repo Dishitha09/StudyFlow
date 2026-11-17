@@ -32,6 +32,7 @@ import javax.imageio.ImageIO;
 import javax.swing.AbstractButton;
 import javax.swing.JLabel;
 import javax.swing.JToggleButton;
+import javax.swing.JTabbedPane;
 import javax.swing.SwingUtilities;
 
 /** Captures actual Swing pages with synthetic data in a new profile; never opens the user's profile. */
@@ -52,22 +53,27 @@ class VisualSmoke {
 
     public static void main(String[] args) throws Exception {
         if (args.length < 1 || args.length > 2 || GraphicsEnvironment.isHeadless()) {
-            throw new IllegalArgumentException("Use a desktop: VisualSmoke <screenshot folder> [dashboard|analytics|workflow|all]");
+            throw new IllegalArgumentException("Use a desktop: VisualSmoke <folder> [dashboard|analytics|workflow|integrations|dpi|all]");
         }
         Path output = Path.of(args[0]).toAbsolutePath();
         Files.createDirectories(output);
-        List<String> capture = args.length == 2 && args[1].equals("all") ? NAVIGATION
-                : args.length == 2 && args[1].equals("dashboard") ? List.of("navDashboard")
-                : args.length == 2 && args[1].equals("analytics") ? List.of("navAnalytics")
-                : args.length == 2 && args[1].equals("workflow") ? List.of("navAttendance", "navFocus")
-                : VISUAL_SAMPLE;
+        String mode = args.length == 2 ? args[1] : "";
+        List<String> capture = switch (mode) {
+            case "all" -> NAVIGATION;
+            case "dashboard" -> List.of("navDashboard");
+            case "analytics" -> List.of("navAnalytics");
+            case "workflow" -> List.of("navAttendance", "navFocus");
+            case "integrations" -> List.of("navSettings");
+            case "dpi" -> List.of("navDashboard", "navAnalytics");
+            default -> VISUAL_SAMPLE;
+        };
         Clock clock = Clock.systemDefaultZone();
         for (Theme theme : Theme.values()) {
-            run(theme, output, capture, clock);
+            run(theme, output, capture, clock, mode);
         }
     }
 
-    private static void run(Theme theme, Path output, List<String> capture, Clock clock) throws Exception {
+    private static void run(Theme theme, Path output, List<String> capture, Clock clock, String mode) throws Exception {
         Path profile = Files.createTempDirectory("studyflow-visual-");
         try (StudyFlowContext context = StudyFlowContext.open(profile, clock)) {
             populate(context, clock, theme);
@@ -93,11 +99,18 @@ class VisualSmoke {
                 for (String nav : NAVIGATION) {
                     SwingUtilities.invokeAndWait(() -> navigate(frame, nav));
                 }
-                for (int[] size : List.of(new int[]{1366, 768}, new int[]{1440, 900},
-                        new int[]{1920, 1080}, new int[]{1024, 700})) {
+                List<int[]> sizes = mode.equals("dpi") ? List.of(new int[]{1024, 700})
+                        : List.of(new int[]{1366, 768}, new int[]{1440, 900}, new int[]{1920, 1080}, new int[]{1024, 700});
+                for (int[] size : sizes) {
                     for (String nav : capture) {
                         SwingUtilities.invokeAndWait(() -> {
                             navigate(frame, nav);
+                            if (mode.equals("integrations")) {
+                                Component panel = find(frame, "integrationsPanel");
+                                if (panel == null) throw new AssertionError("Integration controls are missing");
+                                ((JTabbedPane) SwingUtilities.getAncestorOfClass(JTabbedPane.class, panel))
+                                        .setSelectedComponent(panel);
+                            }
                             frame.getContentPane().setPreferredSize(new Dimension(size[0], size[1]));
                             frame.pack();
                             frame.validate();
@@ -115,7 +128,7 @@ class VisualSmoke {
                     }
                 }
                 System.out.printf("%s: %d pages rendered; %d screenshots; graphics DPI scale %.2f%n",
-                        theme, NAVIGATION.size(), 4 * capture.size(),
+                        theme, NAVIGATION.size(), sizes.size() * capture.size(),
                         frame.getGraphicsConfiguration().getDefaultTransform().getScaleX());
             } finally {
                 if (window.get() != null) {
@@ -180,6 +193,9 @@ class VisualSmoke {
         Component page = find(frame, PAGE_CONTENT.get(name));
         if (page == null && name.equals("navAnalytics")) {
             page = find(frame, "analyticsPanel");
+        }
+        if (name.equals("navSettings") && (page == null || !page.isShowing())) {
+            page = find(frame, "integrationsPanel");
         }
         if (page == null || !page.isShowing()) {
             throw new AssertionError("Destination did not display its controls: " + name);

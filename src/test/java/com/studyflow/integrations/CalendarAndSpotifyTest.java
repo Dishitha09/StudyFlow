@@ -22,6 +22,31 @@ import org.junit.jupiter.params.provider.ValueSource;
 import static org.junit.jupiter.api.Assertions.*;
 
 class CalendarAndSpotifyTest {
+    @Test
+    void parsesAllDayEventAcrossMonthBoundaryWithoutTimezoneShift() throws Exception {
+        LocalDate monthEnd = LocalDate.of(2026, 10, 31);
+        Path file = directory.resolve("parsed.ics");
+        var task = new GeneralTask("calendar-fixture", "Résumé, chapter 2; read", "", null, monthEnd, monthEnd,
+                Priority.LOW, TaskStatus.TODO);
+        CalendarExport.write(file, List.of(task), GENERATED, Map.of());
+        var fields = new java.util.HashMap<String, String>();
+        boolean active = false;
+        for (String line : Files.readString(file).replace("\r\n ", "").split("\r\n")) {
+            if ("BEGIN:VEVENT".equals(line)) active = true;
+            else if ("END:VEVENT".equals(line)) active = false;
+            else if (active) {
+                int colon = line.indexOf(':');
+                assertTrue(colon > 0);
+                assertNull(fields.put(line.substring(0, colon), line.substring(colon + 1)));
+            }
+        }
+        var basic = java.time.format.DateTimeFormatter.BASIC_ISO_DATE;
+        assertEquals(monthEnd, LocalDate.parse(fields.get("DTSTART;VALUE=DATE"), basic));
+        assertEquals(monthEnd.plusDays(1), LocalDate.parse(fields.get("DTEND;VALUE=DATE"), basic));
+        assertFalse(fields.keySet().stream().anyMatch(key -> key.contains("TZID")));
+        assertEquals(task.getTitle(), fields.get("SUMMARY").replace("\\,", ",").replace("\\;", ";"));
+    }
+
     private static final Instant GENERATED = Instant.parse("2026-11-14T09:10:11Z");
     private static final LocalDate DEADLINE = LocalDate.of(2026, 11, 30);
 
