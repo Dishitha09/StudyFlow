@@ -191,6 +191,13 @@ public final class FocusPanel extends JPanel {
         pulse.stop();
     }
 
+    public boolean hasUnfinishedInterval() {
+        update();
+        FocusTimer.State state = clock.state();
+        return state == FocusTimer.State.RUNNING || state == FocusTimer.State.PAUSED
+                || pending != null && !sending;
+    }
+
     private JPanel createHeader() {
         JPanel header = new JPanel(new BorderLayout(12, 0));
         header.setOpaque(false);

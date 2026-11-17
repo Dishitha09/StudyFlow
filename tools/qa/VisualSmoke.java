@@ -52,12 +52,14 @@ class VisualSmoke {
 
     public static void main(String[] args) throws Exception {
         if (args.length < 1 || args.length > 2 || GraphicsEnvironment.isHeadless()) {
-            throw new IllegalArgumentException("Use a desktop: VisualSmoke <screenshot folder> [dashboard|all]");
+            throw new IllegalArgumentException("Use a desktop: VisualSmoke <screenshot folder> [dashboard|workflow|all]");
         }
         Path output = Path.of(args[0]).toAbsolutePath();
         Files.createDirectories(output);
         List<String> capture = args.length == 2 && args[1].equals("all") ? NAVIGATION
-                : args.length == 2 && args[1].equals("dashboard") ? List.of("navDashboard") : VISUAL_SAMPLE;
+                : args.length == 2 && args[1].equals("dashboard") ? List.of("navDashboard")
+                : args.length == 2 && args[1].equals("workflow") ? List.of("navAttendance", "navFocus")
+                : VISUAL_SAMPLE;
         Clock clock = Clock.systemDefaultZone();
         for (Theme theme : Theme.values()) {
             run(theme, output, capture, clock);

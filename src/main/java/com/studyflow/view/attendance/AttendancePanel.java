@@ -5,6 +5,7 @@ import com.studyflow.service.AttendanceMath.Projection;
 import com.studyflow.service.AttendanceService.Snapshot;
 import com.studyflow.service.AttendanceService.SubjectAttendance;
 import com.studyflow.view.ViewStyle;
+import com.studyflow.view.FormDialogs;
 
 import java.awt.BorderLayout;
 import java.awt.Component;
@@ -251,7 +252,9 @@ public final class AttendancePanel extends JPanel {
         }
         AttendanceEntry entry = historyModel.rowAt(index);
         JTextField classDate = new JTextField(entry.date().toString(), 10);
+        classDate.setName("attendanceCorrectionDate");
         JComboBox<String> classStatus = new JComboBox<>(new String[]{"Attended", "Absent"});
+        classStatus.setName("attendanceCorrectionOutcome");
         classStatus.setSelectedIndex(entry.attended() ? 0 : 1);
         JPanel form = transparent(new GridLayout(0, 1, 0, 5));
         JLabel dateLabel = new JLabel("Class date (YYYY-MM-DD)");
@@ -262,11 +265,18 @@ public final class AttendancePanel extends JPanel {
         outcomeLabel.setLabelFor(classStatus);
         form.add(outcomeLabel);
         form.add(classStatus);
-        if (showForm(form, "Correct class")) {
-            LocalDate updatedDate = parseDate(classDate.getText());
-            if (updatedDate != null) {
-                actions.correct(entry.id(), updatedDate, classStatus.getSelectedIndex() == 0);
-            }
+        Correction change = FormDialogs.show(this, "Correct class", form, classDate, "Save correction",
+                () -> !entry.date().toString().equals(classDate.getText())
+                        || entry.attended() != (classStatus.getSelectedIndex() == 0), () -> {
+                    try {
+                        return new Correction(LocalDate.parse(classDate.getText().strip()),
+                                classStatus.getSelectedIndex() == 0);
+                    } catch (DateTimeParseException error) {
+                        throw new IllegalArgumentException("Enter the class date in YYYY-MM-DD format.");
+                    }
+                });
+        if (change != null) {
+            actions.correct(entry.id(), change.date(), change.attended());
         }
     }
 
@@ -282,15 +292,23 @@ public final class AttendancePanel extends JPanel {
         label.setLabelFor(input);
         form.add(label, BorderLayout.LINE_START);
         form.add(input, BorderLayout.CENTER);
-        if (showForm(form, "Change attendance target")) {
+        var editor = ((JSpinner.DefaultEditor) input.getEditor()).getTextField();
+        String initial = editor.getText();
+        Integer changed = FormDialogs.show(this, "Change attendance target", form, editor, "Save target",
+                () -> !initial.equals(editor.getText()), () -> {
             try {
                 input.commitEdit();
-                actions.setTarget(subject.subjectId(), (Integer) input.getValue());
+                return (Integer) input.getValue();
             } catch (java.text.ParseException error) {
-                inputError("Enter a whole percentage from 0 to 100.");
+                throw new IllegalArgumentException("Enter a whole percentage from 0 to 100.");
             }
+        });
+        if (changed != null) {
+            actions.setTarget(subject.subjectId(), changed);
         }
     }
+
+    private record Correction(LocalDate date, boolean attended) { }
 
     private LocalDate parseDate(String text) {
         try {
@@ -299,11 +317,6 @@ public final class AttendancePanel extends JPanel {
             inputError("Enter the class date in YYYY-MM-DD format.");
             return null;
         }
-    }
-
-    private boolean showForm(Component form, String title) {
-        return JOptionPane.showConfirmDialog(this, form, title, JOptionPane.OK_CANCEL_OPTION,
-                JOptionPane.PLAIN_MESSAGE) == JOptionPane.OK_OPTION;
     }
 
     private void inputError(String message) {

@@ -483,13 +483,19 @@ public final class MainFrame extends JFrame {
     }
 
     public boolean confirmClose() {
-        if (!tasks.hasUnsavedEdit() && !subjects.hasUnsavedChanges()
-                && !workspaces.hasUnsavedChanges() && !notes.hasUnsavedChanges()) {
+        boolean drafts = tasks.hasUnsavedEdit() || subjects.hasUnsavedChanges()
+                || workspaces.hasUnsavedChanges() || notes.hasUnsavedChanges();
+        boolean interval = focus.hasUnfinishedInterval();
+        if (!drafts && !interval) {
             return true;
         }
-        return javax.swing.JOptionPane.showConfirmDialog(this, "Discard unsaved edits and close StudyFlow?",
-                "Unsaved changes", javax.swing.JOptionPane.OK_CANCEL_OPTION,
-                javax.swing.JOptionPane.WARNING_MESSAGE) == javax.swing.JOptionPane.OK_OPTION;
+        String message = (drafts ? "Unsaved edits will be discarded." : "")
+                + (interval ? (drafts ? "\n" : "") + "The current timer or unsaved focus session will be lost. "
+                + "Keep StudyFlow open to finish or retry saving." : "");
+        String[] choices = {"Keep StudyFlow open", "Close StudyFlow"};
+        return javax.swing.JOptionPane.showOptionDialog(this, message, "Close StudyFlow?",
+                javax.swing.JOptionPane.DEFAULT_OPTION, javax.swing.JOptionPane.WARNING_MESSAGE,
+                null, choices, choices[0]) == 1;
     }
 
     private void focusSaved(boolean saved) {

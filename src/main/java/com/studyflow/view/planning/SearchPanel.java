@@ -44,7 +44,7 @@ public final class SearchPanel extends JPanel {
         setBorder(BorderFactory.createEmptyBorder(26, 28, 24, 28));
         query.setName("globalSearchQuery");
         query.getAccessibleContext().setAccessibleName("Search study records");
-        query.putClientProperty("JTextField.placeholderText", "Search tasks, subjects, workspaces and notes");
+        query.putClientProperty("JTextField.placeholderText", "Search tasks, subjects, workspaces, notes and PDFs");
         submit.setName("globalSearchSubmit");
         results.setName("globalSearchResults");
         results.getAccessibleContext().setAccessibleName("Search results");

@@ -29,3 +29,10 @@
 - Why: place Today's Plan and Upcoming together, surface five real counts, open rows directly, keep one page scroll and make empty states actionable. The date tick refreshes task counts after midnight.
 - Verification: **144 tests passed** on a clean Java 21 build. The populated dashboard opened task details, completed a real fixture task, expanded its priority list and kept status/deadline labels readable in a compact frame. Light and dark client captures at 1024×700, 1366×768, 1440×900 and 1920×1080 use a synthetic three-course profile with seven tasks, five focus records and twelve class records. This 125% host limits the native client to 1540×932; 1920×1080 is a logical-size paint of the same running Swing view.
 - Gate: passed. Phase 4 targets cross-page workflows, restart and input feedback.
+
+## Phase 4 · Academic workflows
+
+- Files: `AttendancePanel`, `FocusPanel`, `SearchPanel`, `MainFrame`, `ReminderServiceTest` and `tools/qa/{WorkflowSmoke,VisualSmoke}.java`.
+- Why: retain and correct attendance input inline; warn on closing with an unfinished focus interval; describe PDF search coverage. Preserve TaskManager as the owner of task state.
+- Verification: **145 tests passed** on a clean Java 21 build. A native Swing probe used three temporary profiles for: assignment creation, search/linking and completion across shared views; workspace membership and note creation/edit/search; attendance add/correct/target and focus start/pause/resume/finish. All three reopened with saved records. The attendance probe rejected an invalid date without dropping the edit. [Attendance](screenshots/completion/attendance-light-1366x768.png) and [Focus](screenshots/completion/focus-dark-1366x768.png) use synthetic records.
+- Gate: passed. Advanced PDF retrieval and study questions/history are checked in Phase 5.
