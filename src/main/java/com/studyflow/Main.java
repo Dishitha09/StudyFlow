@@ -14,6 +14,7 @@ import java.awt.event.WindowEvent;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.time.Clock;
+import java.time.LocalDate;
 import java.util.Arrays;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
@@ -25,7 +26,7 @@ import javax.swing.SwingUtilities;
 /** Starts the Swing desktop application or runs a local data command. */
 public final class Main {
     private static final String BACKUP_TYPES =
-            "<tasks|subjects|workspaces|notes|settings|attendance|attendance-targets|focus|integrations>";
+            "<tasks|subjects|workspaces|notes|settings|attendance|attendance-targets|focus|integrations|timetable>";
     private Main() {
     }
 
@@ -39,6 +40,10 @@ public final class Main {
                 }
                 case "--restore" -> {
                     restore(args, commandIndex);
+                    return;
+                }
+                case "--import-timetable" -> {
+                    importTimetable(args, commandIndex);
                     return;
                 }
                 default -> {
@@ -80,6 +85,18 @@ public final class Main {
         AppConfig config = AppConfig.fromArgs(Arrays.copyOf(args, restoreIndex));
         StudyFlowContext.restore(config.dataDirectory(), args[restoreIndex + 1], Path.of(args[restoreIndex + 2]));
         System.out.println("Restored " + args[restoreIndex + 1] + " in " + config.dataDirectory());
+    }
+
+    private static void importTimetable(String[] args, int commandIndex) throws IOException {
+        if (args.length != commandIndex + 2) {
+            throw new IllegalArgumentException("Usage: StudyFlow [--data-dir <directory>] --import-timetable <file.ics>");
+        }
+        AppConfig config = AppConfig.fromArgs(Arrays.copyOf(args, commandIndex));
+        Clock clock = Clock.systemDefaultZone();
+        try (StudyFlowContext context = StudyFlowContext.open(config.dataDirectory(), clock)) {
+            var imported = context.timetable().importFile(Path.of(args[commandIndex + 1]), LocalDate.now(clock));
+            System.out.println(imported.message() + " View date: " + imported.showDate());
+        }
     }
 
     private static void initialize(AppConfig config, ExecutorService worker, CompletableFuture<Void> finished) {

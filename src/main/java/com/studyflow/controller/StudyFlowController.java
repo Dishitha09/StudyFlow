@@ -17,11 +17,13 @@ import com.studyflow.model.Task;
 import com.studyflow.model.TaskStatus;
 import com.studyflow.model.TaskType;
 import com.studyflow.model.Theme;
+import com.studyflow.model.TimetableEntry;
 import com.studyflow.model.UserSettings;
 import com.studyflow.model.Workspace;
 import com.studyflow.service.TaskFilter;
 import com.studyflow.service.AttendanceService;
 import com.studyflow.service.TaskManager;
+import com.studyflow.service.TimetableService;
 import com.studyflow.service.ReminderService;
 import com.studyflow.service.StudyAssistant;
 import com.studyflow.service.MaterialLibrary;
@@ -335,6 +337,23 @@ public final class StudyFlowController {
         }, success, failure);
     }
 
+    public void importTimetable(Path path, TaskQuery query, Consumer<TimetableChange> success, Consumer<String> failure) {
+        submit(() -> {
+            try {
+                var imported = context.timetable().importFile(path, currentDate());
+                return new TimetableChange(imported, snapshot(query));
+            } catch (IOException error) {
+                throw new UncheckedIOException(error.getMessage(), error);
+            }
+        }, success, failure);
+    }
+
+    public void editTimetable(TimetableEntry entry) { context.timetable().update(entry); }
+
+    public void deleteTimetable(String id) { context.timetable().delete(id); }
+
+    public record TimetableChange(TimetableService.ImportResult imported, Records records) { }
+
     public void createTask(TaskDraft draft) {
         context.taskManager().create(draft);
     }
@@ -453,12 +472,15 @@ public final class StudyFlowController {
         var links = optional(() -> new IntegrationLinks(context.integrations().linkedCalendarTasks(),
                 context.integrations().playlists()), new IntegrationLinks(Set.of(), List.of()),
                 "desktop.integrations.unavailable", INTEGRATIONS_UNAVAILABLE);
+        var timetable = optional(context.timetable()::findAll, List.<TimetableEntry>of(),
+                "desktop.timetable.unavailable", "Saved timetable could not be read. The file was kept for recovery.");
         return new Records(dashboard, taskRows(query), subjects, context.workspaceManager().findAll(),
                 context.noteManager().findAll(), settings.getTheme(), all, settings,
                 context.focusRepository().load().size(), context.attendanceService().snapshot(),
                 pdf.value(), context.studyAssistant().remoteAvailable(),
                 context.integrations().google().configured(), context.integrations().google().connected(),
-                links.value().calendarTasks(), links.value().playlists(), pdf.warning(), links.warning());
+                links.value().calendarTasks(), links.value().playlists(), pdf.warning(), links.warning(),
+                timetable.value(), timetable.warning());
     }
 
     private static final String MATERIALS_UNAVAILABLE =
@@ -537,7 +559,8 @@ public final class StudyFlowController {
                           UserSettings settings, int completedSessions, AttendanceService.Snapshot attendance,
                           List<StudyMaterial> materials, boolean remoteAi, boolean googleConfigured,
                           boolean googleConnected, Set<String> linkedCalendarTasks, List<String> playlists,
-                          String materialsWarning, String integrationsWarning) { }
+                          String materialsWarning, String integrationsWarning, List<TimetableEntry> timetable,
+                          String timetableWarning) { }
 
     public record SearchData(com.studyflow.service.SearchService.SearchResults records,
                              List<StudyMaterial> materials, String materialsWarning) { }

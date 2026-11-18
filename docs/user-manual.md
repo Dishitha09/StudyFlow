@@ -39,11 +39,25 @@ The Dashboard shows today's tasks, upcoming deadlines, Smart Priority, and task 
 
 - **My Tasks.** Select a task for its details and status or priority controls. Use **Edit** to change fields and **Delete** to remove the task and its subtasks after confirmation. Choose search terms and filters, then select **Apply**. Use **Clear filters** to restore the full listing.
 - **Subtasks and recurrence.** Open the selected task's subtask and recurrence controls. Add smaller steps and complete them independently. Set daily, weekly, or monthly recurrence on a root task with a deadline. Completing it creates the next occurrence.
-- **Calendar.** Navigate by month and select a date to see what is scheduled. Filter StudyFlow tasks by subject. Choose **Edit task** to change a deadline or its subject, or **Edit subject** to open the linked course. A connected Google Calendar appears in the same view.
+- **Calendar.** Navigate by month and select a date to see what is scheduled. Filter StudyFlow tasks by subject. Choose **Edit task** to change a deadline or its subject, or **Edit subject** to open the linked course. Imported timetable entries and events from a connected Google Calendar appear alongside StudyFlow tasks.
 - **Kanban Board.** The progress chart shows the share of tasks in each status and the number overdue. Cards show priority, type, and deadline. Move a task between **To do**, **In progress**, and **Completed** using the card controls.
 - **Search.** Press **Ctrl+K**. Enter words such as a course name plus a topic. Choose **Open result** or press Enter on a selected result to open the actual record.
 - **Focus.** Choose a preset or custom duration. Press **Ctrl+Space** to start, pause, or resume from Focus. The timer continues while you switch pages. Use **Finish early** to record time spent before closing; unfinished intervals do not restart.
 - **Analytics.** Choose a period or enter inclusive custom dates. The range affects activity trends, focus and attendance. The task inventory always shows current saved tasks, including older completions whose dates are unknown.
+
+### Import a timetable
+
+1. Open **Calendar**, choose **Import timetable**, and select an `.ics` file. The import works offline. Daily or weekly events with an end date or occurrence count expand into individual timetable entries.
+2. Select a date to find its **Timetable** entries. Use **Edit** to change an individual occurrence or **Delete** to take that occurrence off your timetable.
+3. StudyFlow saves the entries and your changes in `timetable/timetable.json` in your profile. A repeat import keeps your edits and leaves removed occurrences off the timetable. If the file contains new occurrences, StudyFlow adds them. Imported timetable entries stay local, including when Google Calendar auto-sync is on.
+
+You can also close StudyFlow and import from the command line. With the portable JAR, run:
+
+```powershell
+java -jar StudyFlow.jar --import-timetable "semester.ics"
+```
+
+For an alternate profile, put `--data-dir "C:\StudyFlow data"` before `--import-timetable`.
 
 ### Track attendance
 
@@ -92,5 +106,7 @@ Close StudyFlow before making or restoring a backup. Choose the JSON record type
 java -jar StudyFlow.jar --backup tasks
 java -jar StudyFlow.jar --restore tasks "data/backups/backup.json"
 ```
+
+Use the `timetable` type with either command to back up or restore imported timetable entries, edits and removals.
 
 Replace the example backup path with a file printed by the backup command or an earlier backup from `data/backups`. Add `--data-dir "C:\StudyFlow data"` before `--backup` or `--restore` for a non-default profile. Restoration checks references before replacing a record file, and preserves the file it replaces. Restart StudyFlow after a successful restore. For a whole-profile copy, close the app and copy the complete profile directory, including managed PDFs and their index.

@@ -25,6 +25,7 @@ import com.studyflow.repository.StorageException;
 import com.studyflow.repository.StudyHistoryRepository;
 import com.studyflow.repository.SubjectRepository;
 import com.studyflow.repository.TaskRepository;
+import com.studyflow.repository.TimetableRepository;
 import com.studyflow.repository.WorkspaceRepository;
 import com.studyflow.service.NoteManager;
 import com.studyflow.service.AttendanceService;
@@ -33,6 +34,7 @@ import com.studyflow.service.StudyAssistant;
 import com.studyflow.service.SearchService;
 import com.studyflow.service.SubjectManager;
 import com.studyflow.service.TaskManager;
+import com.studyflow.service.TimetableService;
 import com.studyflow.service.WorkspaceManager;
 
 import java.io.IOException;
@@ -62,6 +64,7 @@ public final class StudyFlowContext implements AutoCloseable {
     private final MaterialLibrary materialLibrary;
     private final StudyAssistant studyAssistant;
     private final LocalIntegrations integrations;
+    private final TimetableService timetable;
     private final OpenAiProvider aiProvider;
     private UserSettings settings;
 
@@ -77,6 +80,7 @@ public final class StudyFlowContext implements AutoCloseable {
         aiProvider = OpenAiProvider.fromEnvironment();
         studyAssistant = new StudyAssistant(materialLibrary, aiProvider, new StudyHistoryRepository(storage), clock);
         integrations = new LocalIntegrations(new IntegrationRepository(storage), new GoogleCalendar(), clock);
+        timetable = new TimetableService(new TimetableRepository(storage), clock.getZone());
         attendanceService = new AttendanceService(repositories.attendance(),
                 repositories.attendanceTargets(), repositories.subjects()::load,
                 () -> settings().getDefaultAttendanceTarget());
@@ -141,6 +145,7 @@ public final class StudyFlowContext implements AutoCloseable {
                 case "attendance-targets" -> repositories.attendanceTargets().backup();
                 case "focus" -> new FocusRepository(storage).backup();
                 case "integrations" -> new IntegrationRepository(storage).backup();
+                case "timetable" -> new TimetableRepository(storage).backup();
                 default -> throw new IllegalArgumentException("Unknown record type for backup: " + type);
             };
         }
@@ -180,6 +185,7 @@ public final class StudyFlowContext implements AutoCloseable {
                                 subjectIds(repositories.subjects().load()), targets.stream().map(AttendanceTarget::subjectId)));
                 case "focus" -> new FocusRepository(storage).restore(backup, records -> { });
                 case "integrations" -> new IntegrationRepository(storage).restore(backup, records -> { });
+                case "timetable" -> new TimetableRepository(storage).restore(backup);
                 default -> throw new IllegalArgumentException("Unknown record type for recovery: " + type);
             }
         }
@@ -275,6 +281,8 @@ public final class StudyFlowContext implements AutoCloseable {
     public LocalIntegrations integrations() { return integrations; }
 
     public OpenAiProvider aiProvider() { return aiProvider; }
+
+    public TimetableService timetable() { return timetable; }
 
     public synchronized UserSettings settings() {
         return settings.copy();

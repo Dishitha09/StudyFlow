@@ -9,6 +9,7 @@ import com.studyflow.model.Priority;
 import com.studyflow.model.Subject;
 import com.studyflow.model.TaskStatus;
 import com.studyflow.model.Theme;
+import com.studyflow.model.TimetableEntry;
 import com.studyflow.view.academic.AcademicPanel;
 import com.studyflow.view.attendance.AttendancePanel;
 import com.studyflow.view.analytics.AnalyticsPanel;
@@ -36,6 +37,7 @@ import java.awt.event.ComponentAdapter;
 import java.awt.event.ComponentEvent;
 import java.awt.event.InputEvent;
 import java.awt.event.KeyEvent;
+import java.nio.file.Path;
 import java.time.YearMonth;
 import java.util.List;
 import java.util.Set;
@@ -96,6 +98,7 @@ public final class MainFrame extends JFrame {
     private boolean googleAutoPending;
     private java.util.concurrent.atomic.AtomicBoolean googleAutoRun;
     private long googleAutoFailedAt;
+    private String timetableWarning;
     private YearMonth googleEventsMonth;
     private List<GoogleCalendar.Event> googleEvents = List.of();
     private AtomicBoolean googleReadRun;
@@ -139,7 +142,8 @@ public final class MainFrame extends JFrame {
                 () -> controller.changeNotifications(enabled), "Reminder preference saved.", null), integrations);
         settings.showTheme(theme);
         calendar = new CalendarPanel(this::openTask, tasks::openEdit, this::openSubjectEditor,
-                this::openCalendarIntegrations, this::requestGoogleEvents, this::refreshGoogleEvents);
+                this::openCalendarIntegrations, this::requestGoogleEvents, this::refreshGoogleEvents,
+                new TimetableActions());
         kanban = new KanbanPanel((id, status) -> change(() -> controller.changeStatus(id, status),
                 "Task moved.", null), this::openTask);
         focus = new FocusPanel(session -> change(() -> controller.recordFocus(session.id(), session.taskId(),
@@ -386,7 +390,10 @@ public final class MainFrame extends JFrame {
             SwingUtilities.invokeLater(search::focusQuery);
         }
         if (page == Page.ANALYTICS) refreshAnalytics(analytics.range());
-        if (page == Page.CALENDAR) refreshGoogleEvents();
+        if (page == Page.CALENDAR) {
+            refreshGoogleEvents();
+            if (timetableWarning != null) showFeedback(timetableWarning, true);
+        }
     }
 
     private void dashboardAction(DashboardPanel.Action action) {
@@ -435,6 +442,8 @@ public final class MainFrame extends JFrame {
         notes.showRecords(records.subjects(), records.workspaces(), records.notes());
         taskSubjects = records.subjects();
         calendar.showTasks(records.allTasks(), taskSubjects, records.linkedCalendarTasks());
+        calendar.showTimetable(records.timetable());
+        timetableWarning = records.timetableWarning();
         kanban.showTasks(records.allTasks(), taskSubjects);
         focus.showData(records.allTasks(), taskSubjects, records.settings(), records.completedSessions());
         attendance.showData(records.attendance());
@@ -716,6 +725,7 @@ public final class MainFrame extends JFrame {
         attendance.setBusy(busy);
         materials.setBusy(busy);
         integrations.setBusy(busy);
+        calendar.setTimetableBusy(busy);
     }
 
     public void setClosing() {
@@ -857,6 +867,34 @@ public final class MainFrame extends JFrame {
             case SubtaskDialog.Remove remove -> () -> controller.removeSubtask(task.getId(), remove.id());
         };
         change(command, "Task planning updated.", null);
+    }
+
+    private final class TimetableActions implements CalendarPanel.TimetableActions {
+        @Override public void importFile(Path source) {
+            if (busy || closing) return;
+            setBusy(true);
+            showFeedback("Importing timetable…", false);
+            controller.importTimetable(source, taskQuery, result -> {
+                if (closing) return;
+                showRecords(result.records());
+                calendar.showTimetableDate(result.imported().showDate());
+                setBusy(false);
+                showFeedback(result.imported().message(), false);
+            }, message -> {
+                if (closing) return;
+                setBusy(false);
+                showFeedback(message, true);
+            });
+        }
+
+        @Override public void update(TimetableEntry updated) {
+            change(() -> controller.editTimetable(updated), "Timetable entry saved.",
+                    () -> calendar.showTimetableDate(updated.start().toLocalDate()));
+        }
+
+        @Override public void delete(String id) {
+            change(() -> controller.deleteTimetable(id), "Timetable entry removed.", null);
+        }
     }
 
     private final class IntegrationActions implements IntegrationsPanel.Actions {

@@ -1,6 +1,6 @@
 # StudyFlow privacy and limitations
 
-StudyFlow stores academic data in a local, single-user profile. Tasks, notes, attendance, focus, analytics, PDF search and local study modes work offline. While connected, the Calendar page can load the displayed month from your Google primary calendar. StudyFlow task details go to Google only when you select tasks for sync or enable automatic sending. Each optional AI request requires confirmation. Spotify opens a browser link, and iCalendar export writes a local file.
+StudyFlow stores academic data in a local, single-user profile. Tasks, notes, timetable imports, attendance, focus, analytics, PDF search and local study modes work offline. While connected, the Calendar page can load the displayed month from your Google primary calendar. StudyFlow task details go to Google only when you select tasks for sync or enable automatic sending. Each optional AI request requires confirmation. Spotify opens a browser link, and iCalendar export writes a local file.
 
 | Action | What leaves the profile | What StudyFlow stores |
 | --- | --- | --- |
@@ -8,6 +8,7 @@ StudyFlow stores academic data in a local, single-user profile. Tasks, notes, at
 | Remote study request | The confirmed topic, selected mode and evidence snippets, with their file labels and pages, go to the configured provider. Question requests also include the chosen count and difficulty. | A result is saved only if **Save in local history** is checked. Uncheck it before a run to keep the result out of history. |
 | View Google Calendar | The browser opens Google’s OAuth flow. Once connected, StudyFlow makes authenticated read requests to the primary calendar for the displayed month. Loading events does not send StudyFlow task details. | Retrieved events and OAuth tokens stay in memory for the session. Retrieved events do not enter profile files or backups. Restarting requires reconnecting. |
 | Send tasks to Google Calendar | **Sync selected** sends chosen tasks. **Auto-sync dated tasks** sends eligible dated tasks, including completed ones, after you enable it and confirm. Event details include task titles, deadlines, descriptions, and linked subject names and codes. **Remove event** sends a request to delete the linked event. | The auto-sync preference, task-to-event links, and manual removal choices persist locally. |
+| Import an iCalendar timetable | Nothing from the app. Timetable entries are excluded from outbound Google sync. | Imported occurrences, local edits, and records of removed occurrences stay in the profile’s `timetable/timetable.json`. Use the `timetable` type for manual backup and restore. |
 | iCalendar export | The app writes selected dated tasks into an `.ics` file. Any subsequent transfer or import is up to the student. | The file is written to the chosen location. |
 | Spotify | The system browser opens the selected Spotify URL. | Saved links contain the shortcut data. StudyFlow keeps no Spotify token. |
 

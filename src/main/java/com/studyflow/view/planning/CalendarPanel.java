@@ -4,6 +4,7 @@ import com.studyflow.integrations.GoogleCalendar;
 import com.studyflow.model.Subject;
 import com.studyflow.model.Task;
 import com.studyflow.model.TaskType;
+import com.studyflow.model.TimetableEntry;
 import com.studyflow.view.ViewStyle;
 
 import java.awt.BorderLayout;
@@ -12,12 +13,15 @@ import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.GridLayout;
 import java.awt.Insets;
+import java.nio.file.Path;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.YearMonth;
 import java.time.format.DateTimeFormatter;
 import java.time.format.TextStyle;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -33,17 +37,25 @@ import javax.swing.JButton;
 import javax.swing.JComboBox;
 import javax.swing.DefaultComboBoxModel;
 import javax.swing.DefaultListCellRenderer;
+import javax.swing.JFileChooser;
 import javax.swing.JLabel;
+import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.SwingConstants;
+import javax.swing.filechooser.FileNameExtensionFilter;
 
-/** Monthly view of StudyFlow deadlines and read-only Google Calendar events. */
+/** Monthly view of StudyFlow deadlines, timetable entries and read-only Google events. */
 public final class CalendarPanel extends JPanel {
+    private static final DateTimeFormatter SHORT_DATE = DateTimeFormatter.ofPattern("MMM d");
+    private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("HH:mm");
+    private static final DateTimeFormatter SHORT_DATE_TIME = DateTimeFormatter.ofPattern("MMM d, HH:mm");
+
     private final Consumer<String> openTask;
     private final Consumer<Task> editTask;
     private final Consumer<String> editSubject;
     private final Consumer<YearMonth> monthChanged;
+    private final TimetableActions timetableActions;
     private final JLabel monthLabel = ViewStyle.subheading("");
     private final JLabel selectedLabel = ViewStyle.subheading("");
     private final JLabel googleStatus = ViewStyle.muted("");
@@ -51,36 +63,45 @@ public final class CalendarPanel extends JPanel {
     private final JPanel eventList = new JPanel();
     private final JButton previous = new JButton("‹");
     private final JButton next = new JButton("›");
+    private final JButton importTimetable = new JButton("Import timetable…");
+    private final List<JButton> timetableButtons = new ArrayList<>();
     private final JComboBox<SubjectFilter> subjectFilter = new JComboBox<>();
     private YearMonth month = YearMonth.now();
     private LocalDate selected = LocalDate.now();
     private Map<LocalDate, List<Task>> tasksByDate = Map.of();
     private Map<LocalDate, List<GoogleCalendar.Event>> googleByDate = Map.of();
+    private List<TimetableEntry> timetable = List.of();
+    private Map<LocalDate, List<TimetableEntry>> timetableByDate = Map.of();
     private Map<String, String> subjects = Map.of();
     private Set<String> linkedTasks = Set.of();
+    private boolean timetableBusy;
 
     public CalendarPanel(Consumer<String> openTask, Consumer<Task> editTask, Consumer<String> editSubject,
-                         Runnable openGoogle, Consumer<YearMonth> monthChanged, Runnable refreshGoogleEvents) {
+                         Runnable openGoogle, Consumer<YearMonth> monthChanged, Runnable refreshGoogleEvents,
+                         TimetableActions timetableActions) {
         super(new BorderLayout(0, 14));
         this.openTask = openTask;
         this.editTask = editTask;
         this.editSubject = editSubject;
         this.monthChanged = monthChanged;
+        this.timetableActions = timetableActions;
         setName("calendarPanel");
         setBorder(BorderFactory.createEmptyBorder(24, 26, 24, 26));
         JPanel heading = new JPanel(new BorderLayout(10, 0));
         heading.setOpaque(false);
         heading.add(ViewStyle.heading("Calendar"), BorderLayout.LINE_START);
 
-        JPanel googleActions = new JPanel(new FlowLayout(FlowLayout.TRAILING, 5, 0));
-        googleActions.setOpaque(false);
+        JPanel actions = new JPanel(new FlowLayout(FlowLayout.TRAILING, 5, 0));
+        actions.setOpaque(false);
+        calendarButton(importTimetable, "calendarImportTimetable", "Import a timetable (.ics)", this::chooseTimetable);
         JButton refresh = new JButton("Refresh Google");
         calendarButton(refresh, "calendarGoogleRefresh", "Refresh Google Calendar events", refreshGoogleEvents);
         JButton google = new JButton("Google Calendar…");
         calendarButton(google, "calendarGoogle", "Manage Google Calendar sync or export a calendar file", openGoogle);
-        googleActions.add(refresh);
-        googleActions.add(google);
-        heading.add(googleActions, BorderLayout.LINE_END);
+        actions.add(importTimetable);
+        actions.add(refresh);
+        actions.add(google);
+        heading.add(actions, BorderLayout.LINE_END);
         add(heading, BorderLayout.PAGE_START);
 
         JPanel content = new PlanningScrollContent(new BorderLayout(0, 14));
@@ -94,6 +115,54 @@ public final class CalendarPanel extends JPanel {
 
     public YearMonth displayedMonth() {
         return month;
+    }
+
+    public void showTimetable(List<TimetableEntry> entries) {
+        List<TimetableEntry> sorted = entries.stream().sorted(Comparator.comparing(TimetableEntry::start)
+                .thenComparing(TimetableEntry::end).thenComparing(TimetableEntry::title)).toList();
+        if (!timetable.equals(sorted)) {
+            timetable = sorted;
+            groupTimetableForMonth();
+            render();
+        }
+    }
+
+    public void showTimetableDate(LocalDate date) {
+        selectDate(date);
+    }
+
+    public void setTimetableBusy(boolean busy) {
+        timetableBusy = busy;
+        importTimetable.setEnabled(!busy);
+        timetableButtons.forEach(button -> button.setEnabled(!busy));
+    }
+
+    private void chooseTimetable() {
+        JFileChooser chooser = new JFileChooser();
+        chooser.setName("calendarTimetableImportChooser");
+        chooser.setDialogTitle("Import timetable");
+        chooser.setFileFilter(new FileNameExtensionFilter("iCalendar files (*.ics)", "ics"));
+        chooser.setAcceptAllFileFilterUsed(false);
+        if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
+            timetableActions.importFile(chooser.getSelectedFile().toPath());
+        }
+    }
+
+    private void groupTimetableForMonth() {
+        Map<LocalDate, List<TimetableEntry>> entries = new HashMap<>();
+        LocalDate first = month.atDay(1);
+        LocalDate last = month.atEndOfMonth();
+        for (TimetableEntry entry : timetable) {
+            LocalDate start = entry.start().toLocalDate();
+            LocalDate end = lastDay(entry);
+            if (start.isAfter(last) || end.isBefore(first)) continue;
+            int from = start.isBefore(first) ? 1 : start.getDayOfMonth();
+            int through = end.isAfter(last) ? last.getDayOfMonth() : end.getDayOfMonth();
+            for (int day = from; day <= through; day++) {
+                entries.computeIfAbsent(month.atDay(day), ignored -> new ArrayList<>()).add(entry);
+            }
+        }
+        timetableByDate = entries;
     }
 
     /** Replaces the Google events for the displayed month. Dates in each event use an exclusive end. */
@@ -247,23 +316,43 @@ public final class CalendarPanel extends JPanel {
     private JPanel dayCell(LocalDate date, boolean today) {
         List<Task> deadlines = deadlines(date);
         List<GoogleCalendar.Event> googleEvents = googleEvents(date);
+        List<TimetableEntry> timetableEntries = timetableEntries(date);
+        int googleCount = googleEvents.size();
+        int timetableCount = timetableEntries.size();
         JPanel cell = new JPanel(new BorderLayout(0, 2));
         cell.setOpaque(false);
-        cell.add(dayButton(date, today, deadlines, googleEvents.size()), BorderLayout.PAGE_START);
+        cell.add(dayButton(date, today, deadlines, timetableCount, googleCount), BorderLayout.PAGE_START);
         if (!deadlines.isEmpty()) {
             cell.add(taskPreview(deadlines), BorderLayout.CENTER);
-            if (!googleEvents.isEmpty()) {
-                JLabel count = googlePreview("Google " + googleEvents.size(), googleCount(googleEvents.size()));
-                cell.add(count, BorderLayout.LINE_END);
-            }
-        } else if (!googleEvents.isEmpty()) {
+            addSourceCounts(cell, timetableCount, googleCount);
+        } else if (timetableCount > 0) {
+            TimetableEntry first = timetableEntries.getFirst();
+            cell.add(sourcePreview("Timetable · " + first.title(), timetableCount(timetableCount) + " · "
+                    + first.title(), "success"), BorderLayout.CENTER);
+            addSourceCounts(cell, 0, googleCount);
+        } else if (googleCount > 0) {
             GoogleCalendar.Event first = googleEvents.getFirst();
-            cell.add(googlePreview("Google · " + first.title(), googleCount(googleEvents.size()) + " · "
-                    + first.title()), BorderLayout.CENTER);
+            cell.add(sourcePreview("Google · " + first.title(), googleCount(googleCount) + " · "
+                    + first.title(), "accent"), BorderLayout.CENTER);
         } else {
             cell.add(Box.createRigidArea(new Dimension(0, 19)), BorderLayout.CENTER);
         }
         return cell;
+    }
+
+    private static void addSourceCounts(JPanel cell, int timetableCount, int googleCount) {
+        if (timetableCount == 0 && googleCount == 0) return;
+        boolean both = timetableCount > 0 && googleCount > 0;
+        JPanel counts = new JPanel(new FlowLayout(FlowLayout.TRAILING, 1, 0));
+        counts.setOpaque(false);
+        if (timetableCount > 0) {
+            counts.add(sourcePreview((both ? "T " : "Timetable ") + timetableCount,
+                    timetableCount(timetableCount), "success"));
+        }
+        if (googleCount > 0) {
+            counts.add(sourcePreview((both ? "G " : "Google ") + googleCount, googleCount(googleCount), "accent"));
+        }
+        cell.add(counts, BorderLayout.LINE_END);
     }
 
     private JButton taskPreview(List<Task> deadlines) {
@@ -283,12 +372,12 @@ public final class CalendarPanel extends JPanel {
         return event;
     }
 
-    private static JLabel googlePreview(String text, String details) {
+    private static JLabel sourcePreview(String text, String details, String color) {
         JLabel preview = new JLabel(text);
         preview.setFont(preview.getFont().deriveFont(10f));
         preview.setBorder(BorderFactory.createEmptyBorder(0, 4, 0, 4));
-        preview.setForeground(ViewStyle.color("accent"));
-        preview.setBackground(ViewStyle.color("accentSoft"));
+        preview.setForeground(ViewStyle.color(color));
+        preview.setBackground(ViewStyle.color(color + "Soft"));
         preview.setOpaque(true);
         preview.setPreferredSize(new Dimension(preview.getPreferredSize().width, 19));
         preview.setToolTipText(details);
@@ -296,7 +385,7 @@ public final class CalendarPanel extends JPanel {
         return preview;
     }
 
-    private JButton dayButton(LocalDate date, boolean today, List<Task> deadlines, int googleCount) {
+    private JButton dayButton(LocalDate date, boolean today, List<Task> deadlines, int timetableCount, int googleCount) {
         long exams = deadlines.stream().filter(task -> task.getType() == TaskType.EXAM).count();
         String mark = deadlines.isEmpty() ? "" : (exams > 0 ? " ★" : " •") + deadlines.size();
         JButton button = new JButton(date.getDayOfMonth() + mark);
@@ -306,6 +395,7 @@ public final class CalendarPanel extends JPanel {
         String details = date.format(DateTimeFormatter.ofPattern("EEEE, d MMMM uuuu"))
                 + (today ? ", today" : "") + ", " + deadlines.size() + " StudyFlow deadlines"
                 + (exams > 0 ? ", including " + exams + (exams == 1 ? " exam" : " exams") : "")
+                + (timetableCount > 0 ? ", " + timetableCount(timetableCount) : "")
                 + (googleCount > 0 ? ", " + googleCount(googleCount) : "");
         button.getAccessibleContext().setAccessibleName(details + (date.equals(selected) ? ", selected" : ""));
         button.setToolTipText(details);
@@ -331,12 +421,15 @@ public final class CalendarPanel extends JPanel {
     private void showDate() {
         selectedLabel.setText(selected.format(DateTimeFormatter.ofPattern("EEEE, d MMMM")));
         eventList.removeAll();
+        timetableButtons.clear();
         List<Task> tasks = deadlines(selected);
+        List<TimetableEntry> timetableEntries = timetableEntries(selected);
         List<GoogleCalendar.Event> events = googleEvents(selected);
-        if (tasks.isEmpty() && events.isEmpty()) {
-            eventList.add(ViewStyle.muted("No matching deadlines or Google events for this date."));
+        if (tasks.isEmpty() && timetableEntries.isEmpty() && events.isEmpty()) {
+            eventList.add(ViewStyle.muted("No items for this date."));
         }
         tasks.forEach(task -> addEventRow(taskRow(task)));
+        timetableEntries.forEach(entry -> addEventRow(timetableRow(entry)));
         events.forEach(event -> addEventRow(googleRow(event)));
         eventList.revalidate();
         eventList.repaint();
@@ -378,35 +471,80 @@ public final class CalendarPanel extends JPanel {
         return row;
     }
 
+    private JPanel timetableRow(TimetableEntry entry) {
+        String details = "Timetable · " + timetableTime(entry)
+                + (entry.location().isBlank() ? "" : " · " + entry.location());
+        JPanel row = externalRow(entry.title(), "calendarTimetableEvent-" + entry.id(), details, "success");
+        JPanel actions = new JPanel(new FlowLayout(FlowLayout.TRAILING, 4, 0));
+        actions.setOpaque(false);
+        JButton edit = new JButton("Edit");
+        calendarButton(edit, "calendarTimetableEdit-" + entry.id(), "Edit timetable entry", () -> {
+            TimetableEntry updated = TimetableDialog.edit(this, entry);
+            if (updated != null && !updated.equals(entry)) timetableActions.update(updated);
+        });
+        JButton delete = new JButton("Delete");
+        calendarButton(delete, "calendarTimetableDelete-" + entry.id(), "Delete timetable entry", () -> {
+            if (JOptionPane.showConfirmDialog(this, "Delete this timetable entry?", "Delete timetable entry",
+                    JOptionPane.OK_CANCEL_OPTION, JOptionPane.WARNING_MESSAGE) == JOptionPane.OK_OPTION) {
+                timetableActions.delete(entry.id());
+            }
+        });
+        actions.add(edit);
+        actions.add(delete);
+        edit.setEnabled(!timetableBusy);
+        delete.setEnabled(!timetableBusy);
+        timetableButtons.add(edit);
+        timetableButtons.add(delete);
+        row.add(actions, BorderLayout.LINE_END);
+        return row;
+    }
+
     private JPanel googleRow(GoogleCalendar.Event event) {
+        return externalRow(event.title(), "calendarGoogleEvent-" + event.id(),
+                "Google Calendar · " + googleEventTime(event), "accent");
+    }
+
+    private static JPanel externalRow(String entryTitle, String titleName, String details, String color) {
         JPanel row = new JPanel(new BorderLayout(0, 4));
         row.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createMatteBorder(0, 3, 0, 0, ViewStyle.color("accent")),
+                BorderFactory.createMatteBorder(0, 3, 0, 0, ViewStyle.color(color)),
                 BorderFactory.createEmptyBorder(4, 8, 4, 0)));
         JLabel title = new JLabel();
         title.putClientProperty("html.disable", Boolean.TRUE);
-        title.setText(event.title());
-        title.setName("calendarGoogleEvent-" + event.id());
+        title.setText(entryTitle);
+        title.setName(titleName);
         title.setFont(title.getFont().deriveFont(Font.BOLD));
-        title.setToolTipText("Google Calendar · " + event.title());
+        title.setToolTipText(details + " · " + entryTitle);
         row.add(title, BorderLayout.CENTER);
-        String details = "Google Calendar · " + googleEventTime(event);
         JLabel source = ViewStyle.muted(details);
         source.setToolTipText(details);
         row.add(source, BorderLayout.PAGE_END);
         return row;
     }
 
+    private static String timetableTime(TimetableEntry entry) {
+        LocalDateTime start = entry.start();
+        LocalDateTime end = entry.end();
+        if (entry.allDay()) return allDayRange(start.toLocalDate(), lastDay(entry));
+        if (start.equals(end)) return TIME.format(start);
+        DateTimeFormatter format = start.toLocalDate().equals(end.toLocalDate()) ? TIME : SHORT_DATE_TIME;
+        return format.format(start) + " – " + format.format(end);
+    }
+
+    private static LocalDate lastDay(TimetableEntry entry) {
+        LocalDateTime end = entry.end();
+        return (entry.start().equals(end) ? end : end.minusNanos(1)).toLocalDate();
+    }
+
     private static String googleEventTime(GoogleCalendar.Event event) {
         if (!event.timeLabel().isBlank()) {
             return event.timeLabel();
         }
-        LocalDate lastDate = event.endDateExclusive().minusDays(1);
-        if (event.startDate().equals(lastDate)) {
-            return "All day";
-        }
-        DateTimeFormatter shortDate = DateTimeFormatter.ofPattern("MMM d");
-        return "All day · " + event.startDate().format(shortDate) + " – " + lastDate.format(shortDate);
+        return allDayRange(event.startDate(), event.endDateExclusive().minusDays(1));
+    }
+
+    private static String allDayRange(LocalDate start, LocalDate end) {
+        return start.equals(end) ? "All day" : "All day · " + SHORT_DATE.format(start) + " – " + SHORT_DATE.format(end);
     }
 
     private void addEventRow(JPanel row) {
@@ -421,8 +559,16 @@ public final class CalendarPanel extends JPanel {
         return googleByDate.getOrDefault(date, List.of());
     }
 
+    private List<TimetableEntry> timetableEntries(LocalDate date) {
+        return timetableByDate.getOrDefault(date, List.of());
+    }
+
     private static String googleCount(int count) {
         return count + (count == 1 ? " Google Calendar event" : " Google Calendar events");
+    }
+
+    private static String timetableCount(int count) {
+        return count + (count == 1 ? " timetable entry" : " timetable entries");
     }
 
     private List<Task> deadlines(LocalDate date) {
@@ -453,6 +599,7 @@ public final class CalendarPanel extends JPanel {
         month = target;
         googleByDate = Map.of();
         showGoogleStatus("");
+        groupTimetableForMonth();
         render();
         monthChanged.accept(target);
     }
@@ -462,5 +609,11 @@ public final class CalendarPanel extends JPanel {
         button.setToolTipText(label);
         button.getAccessibleContext().setAccessibleName(label);
         button.addActionListener(event -> action.run());
+    }
+
+    public interface TimetableActions {
+        void importFile(Path source);
+        void update(TimetableEntry updated);
+        void delete(String id);
     }
 }

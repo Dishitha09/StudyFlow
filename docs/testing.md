@@ -1,5 +1,9 @@
 # StudyFlow verification
 
+## Release 0.2.3
+
+Maven verification passed **209 tests**. New tests cover finite recurrence, time zones and date bounds, repeat imports, editing and deleting occurrences across profile reopen, and restoring a timetable backup. A compact Swing check verified timetable entries alongside tasks and Google events. [The screenshot](screenshots/timetable/calendar-timetable-light-1024x700.png) uses example data.
+
 ## Release 0.2.2
 
 Maven verification passed **195 tests**. Mock Google requests checked month and time-zone boundaries, paginated and recurring events, cancellation, and filtering cancelled or linked outbound events. A Swing probe checked day and month transitions, exclusive all-day end dates, task subject filters, and Google refresh. [The Calendar screenshot](screenshots/calendar-inbound/calendar-dark-1440x900.png) uses synthetic events and tasks and shows both sources on the selected date.
