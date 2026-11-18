@@ -67,6 +67,7 @@ public final class MainFrame extends JFrame {
     private final AttendancePanel attendance;
     private final MaterialPanel materials;
     private final javax.swing.Timer reminderTimer;
+    private final javax.swing.Timer googleAutoTimer;
     private final javax.swing.JTextArea reminderText = new javax.swing.JTextArea(9, 48);
     private final JButton reminderButton = new JButton("Reminders");
     private final AnalyticsPanel analytics;
@@ -85,6 +86,12 @@ public final class MainFrame extends JFrame {
     private boolean error;
     private String pendingTaskSelection;
     private boolean notificationsEnabled;
+    private boolean googleAutoEnabled;
+    private boolean googleConnected;
+    private boolean googleLinksAvailable;
+    private boolean googleAutoPending;
+    private java.util.concurrent.atomic.AtomicBoolean googleAutoRun;
+    private long googleAutoFailedAt;
     private java.time.LocalDate displayedDate;
     private Page activePage;
     private long analyticsRequest;
@@ -280,7 +287,12 @@ public final class MainFrame extends JFrame {
         add(sidebar, BorderLayout.LINE_START);
         add(workspace, BorderLayout.CENTER);
         navigate(Page.DASHBOARD);
-        reminderTimer = new javax.swing.Timer(60_000, event -> refreshDay());
+        googleAutoTimer = new javax.swing.Timer(750, event -> startGoogleAutoSync());
+        googleAutoTimer.setRepeats(false);
+        reminderTimer = new javax.swing.Timer(60_000, event -> {
+            refreshDay();
+            scheduleGoogleAutoSync();
+        });
         setBusy(true);
         controller.load(taskQuery, records -> {
             if (!closing) {
@@ -416,8 +428,13 @@ public final class MainFrame extends JFrame {
         attendance.showData(records.attendance());
         materials.showData(records.materials(), taskSubjects, records.materialsWarning());
         materials.setRemoteAvailable(records.remoteAi());
-        integrations.showData(records.allTasks(), taskSubjects, records.googleConfigured(), records.googleConnected(),
-                records.linkedCalendarTasks(), records.remoteAi(), records.playlists(), records.integrationsWarning());
+        googleAutoEnabled = records.settings().isGoogleAutoSyncEnabled();
+        googleConnected = records.googleConnected();
+        googleLinksAvailable = records.integrationsWarning() == null;
+        integrations.showData(records.allTasks(), taskSubjects, records.googleConfigured(), googleConnected,
+                records.linkedCalendarTasks(), records.remoteAi(), records.playlists(), records.integrationsWarning(),
+                googleAutoEnabled);
+        scheduleGoogleAutoSync();
         integrations.setConnecting(false);
         if (activePage == Page.ANALYTICS) refreshAnalytics(analytics.range());
     }
@@ -476,17 +493,84 @@ public final class MainFrame extends JFrame {
     }
 
     private void changeGoogle(Runnable command, String success) {
-        change(command, success, null, message -> {
-            if (!closing) {
-                // A batch may have linked some events, or lost authorization, before its first failure.
-                controller.load(taskQuery, current -> {
-                    if (!closing) {
-                        showRecords(current);
-                        handleGoogleFailure(message);
-                    }
-                }, ignored -> handleGoogleFailure(message));
-            }
+        if (busy || closing) return;
+        stopGoogleAutoSync();
+        setBusy(true);
+        showFeedback("Working with Google Calendar…", false);
+        controller.changeGoogle(command, ignored -> {
+            if (closing) return;
+            controller.load(taskQuery, records -> {
+                if (closing) return;
+                googleAutoFailedAt = 0;
+                integrations.setAutoSyncFeedback(null);
+                showRecords(records);
+                setBusy(false);
+                showFeedback(success, false);
+            }, this::handleGoogleFailure);
+        }, message -> {
+            if (closing) return;
+            // A batch may have linked events or lost authorization before the failure.
+            controller.load(taskQuery, records -> {
+                if (closing) return;
+                showRecords(records);
+                handleGoogleFailure(message);
+            }, ignored -> handleGoogleFailure(message));
         });
+    }
+
+    private void scheduleGoogleAutoSync() {
+        if (closing || !googleAutoEnabled || !googleConnected || !googleLinksAvailable) return;
+        if (googleAutoFailedAt != 0 && System.nanoTime() - googleAutoFailedAt
+                < java.time.Duration.ofMinutes(1).toNanos()) return;
+        if (googleAutoRun != null) googleAutoPending = true;
+        else if (!googleAutoTimer.isRunning()) googleAutoTimer.start();
+    }
+
+    private void startGoogleAutoSync() {
+        if (closing || !googleAutoEnabled || !googleConnected || !googleLinksAvailable || googleAutoRun != null) return;
+        if (busy) {
+            scheduleGoogleAutoSync();
+            return;
+        }
+        var cancelled = new java.util.concurrent.atomic.AtomicBoolean();
+        googleAutoRun = cancelled;
+        controller.autoSyncGoogle(cancelled::get, state -> {
+            if (!closing && !cancelled.get() && state != null) {
+                googleConnected = state.connected();
+                calendar.updateLinkedTasks(state.linkedTasks());
+                integrations.showGoogleState(state.connected(), state.linkedTasks());
+                if (state.error() != null) {
+                    reportGoogleAutoFailure(state.error());
+                } else {
+                    googleAutoFailedAt = 0;
+                    integrations.setAutoSyncFeedback("Auto-sync updated " + state.synced()
+                            + (state.synced() == 1 ? " task." : " tasks."));
+                }
+            }
+            finishGoogleAutoSync();
+        }, message -> {
+            if (!closing && !cancelled.get()) reportGoogleAutoFailure(message);
+            finishGoogleAutoSync();
+        });
+    }
+
+    private void finishGoogleAutoSync() {
+        googleAutoRun = null;
+        if (googleAutoPending) {
+            googleAutoPending = false;
+            scheduleGoogleAutoSync();
+        }
+    }
+
+    private void stopGoogleAutoSync() {
+        googleAutoTimer.stop();
+        googleAutoPending = false;
+        if (googleAutoRun != null) googleAutoRun.set(true);
+    }
+
+    private void reportGoogleAutoFailure(String message) {
+        googleAutoFailedAt = System.nanoTime();
+        integrations.showAutoSyncError(message);
     }
 
     private void handleGoogleFailure(String message) {
@@ -538,6 +622,7 @@ public final class MainFrame extends JFrame {
     public void setClosing() {
         closing = true;
         reminderTimer.stop();
+        stopGoogleAutoSync();
         if (cancelPdfImport != null) cancelPdfImport.set(true);
         controller.cancelGoogleConnection();
         focus.stop();
@@ -688,7 +773,18 @@ public final class MainFrame extends JFrame {
                 showFeedback("Cancelling Google sign-in…", false);
             }
         }
-        @Override public void disconnect() { change(controller::disconnectGoogle, "Google Calendar disconnected.", null); }
+        @Override public void disconnect() {
+            changeGoogle(controller::disconnectGoogle, "Google Calendar disconnected.");
+        }
+        @Override public void setAutoSync(boolean enabled) {
+            if (busy || closing) return;
+            stopGoogleAutoSync();
+            change(() -> controller.setGoogleAutoSync(enabled),
+                    enabled ? "Google Calendar auto-sync enabled." : "Google Calendar auto-sync disabled.", () -> {
+                        googleAutoFailedAt = 0;
+                        scheduleGoogleAutoSync();
+                    });
+        }
         @Override public void testGoogle() { changeGoogle(controller::testGoogle, "Google Calendar connection verified."); }
         @Override public void openGoogleSetup() { change(controller::openGoogleSetup, "Setup guide opened.", null); }
         @Override public void openGoogleCalendar() { change(controller::openGoogleCalendar, "Google Calendar opened.", null); }

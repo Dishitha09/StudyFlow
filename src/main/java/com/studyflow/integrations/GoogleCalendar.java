@@ -34,6 +34,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BooleanSupplier;
 import java.util.stream.Collectors;
 
 /** Desktop OAuth and event operations for the signed-in primary calendar. */
@@ -188,6 +189,12 @@ public final class GoogleCalendar {
     }
 
     public String upsert(Task task, Subject subject) throws IOException {
+        return upsert(task, subject, () -> false);
+    }
+
+    // Null means cancellation stopped the operation before it could write to Google.
+    String upsert(Task task, Subject subject, BooleanSupplier cancelled) throws IOException {
+        if (cancelled.getAsBoolean()) return null;
         if (task.getDueDate() == null) {
             throw new IllegalArgumentException("Only tasks with deadlines can sync.");
         }
@@ -201,15 +208,19 @@ public final class GoogleCalendar {
             Map<String, Object> created = new HashMap<>(fields);
             created.put("id", id);
             created.put("extendedProperties", Map.of("private", Map.of("studyflowTaskId", task.getId())));
+            if (cancelled.getAsBoolean()) return null;
             response = eventRequest("POST", "/events", mapper.writeValueAsString(created));
             if (response.statusCode() != 409) {
                 requireSuccess(response);
                 return id;
             }
+            if (cancelled.getAsBoolean()) return null;
             response = eventRequest("GET", "/events/" + id, null);
         }
+        if (cancelled.getAsBoolean()) return null;
         requireSuccess(response);
         verifyOwnership(task.getId(), response.body());
+        if (cancelled.getAsBoolean()) return null;
         requireSuccess(eventRequest("PATCH", "/events/" + id, mapper.writeValueAsString(fields)));
         return id;
     }

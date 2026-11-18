@@ -73,7 +73,7 @@ StudyFlow acquires an exclusive profile lock, loads record collections, validate
 - A profile belongs to one desktop user and can be opened by one running StudyFlow writer.
 - JSON backup and recovery work per record type. Managed PDF copies and their text cache reside in the profile and should be included in a whole-profile copy.
 - Text extraction requires readable text in the source PDF. Scanned pages need prior OCR. Technical notation and generated study aids should be checked against the source.
-- Google Calendar sync sends explicitly selected task deadlines to the account's primary calendar. The access token lives in memory for the session. Offline iCalendar export is also available.
+- Google Calendar sends selected task deadlines or, with opt-in auto-sync, eligible dated tasks to the account's primary calendar. Sync runs one way. OAuth tokens live in memory for the session. Offline iCalendar export is also available.
 - Spotify links open in the system browser. Optional OpenAI generation sends selected passages and the user's study request after opt-in.
 
 <!-- pagebreak -->

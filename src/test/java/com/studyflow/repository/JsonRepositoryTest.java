@@ -114,6 +114,37 @@ class JsonRepositoryTest {
         assertTrue(Files.isDirectory(storage.backupDirectory()));
     }
 
+    @Test
+    void googleAutoSyncDefaultsOffAndRoundTripsWithoutRequiringANewSettingsFile() throws IOException {
+        try (FileStorage storage = new FileStorage(directory)) {
+            var settings = new SettingsRepository(storage);
+            assertFalse(settings.load().isGoogleAutoSyncEnabled());
+            Files.writeString(directory.resolve("settings/settings.json"), """
+                    {"theme":"DARK","defaultPriority":"HIGH","defaultAttendanceTarget":80,
+                    "notificationsEnabled":false,"focusDuration":"PT25M","breakDuration":"PT5M"}
+                    """);
+            UserSettings legacy = settings.load();
+            assertFalse(legacy.isGoogleAutoSyncEnabled());
+            assertEquals(Theme.DARK, legacy.getTheme());
+            legacy.setGoogleAutoSyncEnabled(true);
+            settings.save(legacy.copy());
+        }
+
+        try (FileStorage reopened = new FileStorage(directory)) {
+            var settings = new SettingsRepository(reopened);
+            UserSettings saved = settings.load();
+            assertTrue(saved.isGoogleAutoSyncEnabled());
+            assertEquals(Theme.DARK, saved.getTheme());
+            assertFalse(saved.isNotificationsEnabled());
+            saved.setGoogleAutoSyncEnabled(false);
+            settings.save(saved);
+        }
+
+        try (FileStorage reopened = new FileStorage(directory)) {
+            assertFalse(new SettingsRepository(reopened).load().isGoogleAutoSyncEnabled());
+        }
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {"", "{ incomplete", "null", "[] []"})
     void malformedOrEmptySnapshotsAreRejectedWithoutOverwritingThem(String invalid) throws IOException {

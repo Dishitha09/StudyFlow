@@ -43,6 +43,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 import javax.swing.SwingUtilities;
@@ -51,12 +52,18 @@ import javax.swing.SwingUtilities;
 public final class StudyFlowController {
     private final StudyFlowContext context;
     private final Executor worker;
+    private final Executor calendarWorker;
     private final Clock clock;
     private final ReminderService reminders = new ReminderService();
 
     public StudyFlowController(StudyFlowContext context, Executor worker, Clock clock) {
+        this(context, worker, worker, clock);
+    }
+
+    public StudyFlowController(StudyFlowContext context, Executor worker, Executor calendarWorker, Clock clock) {
         this.context = context;
         this.worker = worker;
+        this.calendarWorker = calendarWorker;
         this.clock = clock;
     }
 
@@ -186,6 +193,45 @@ public final class StudyFlowController {
     public boolean cancelGoogleConnection() { return context.integrations().google().cancelConnect(); }
     public void disconnectGoogle() { context.integrations().google().disconnect(); }
     public void testGoogle() { integration(() -> context.integrations().google().calendarId()); }
+    public void setGoogleAutoSync(boolean enabled) {
+        var settings = context.settings();
+        settings.setGoogleAutoSyncEnabled(enabled);
+        context.saveSettings(settings);
+    }
+
+    public void changeGoogle(Runnable command, Consumer<Void> success, Consumer<String> failure) {
+        submit(calendarWorker, () -> {
+            command.run();
+            return null;
+        }, success, failure);
+    }
+
+    public void autoSyncGoogle(BooleanSupplier cancelled, Consumer<GoogleSyncState> success, Consumer<String> failure) {
+        submit(calendarWorker, () -> {
+            if (cancelled.getAsBoolean()) return new GoogleSyncOutcome(0, null);
+            try {
+                int count = context.integrations().syncAutomatically(context.settings().isGoogleAutoSyncEnabled(),
+                        context.taskManager().findAll(), context.subjectManager().findAll(), cancelled);
+                return new GoogleSyncOutcome(count, null);
+            } catch (IOException | com.studyflow.repository.StorageException | IllegalArgumentException error) {
+                AppLog.failure("desktop.google.auto_sync.failed", error);
+                return new GoogleSyncOutcome(0, error.getMessage());
+            }
+        }, result -> {
+            if (cancelled.getAsBoolean() || (result.count() == 0 && result.error() == null)) {
+                success.accept(null);
+                return;
+            }
+            // Read alongside other local refreshes so UI deliveries preserve the local snapshot order.
+            submit(() -> new GoogleSyncState(context.integrations().google().connected(),
+                    context.integrations().linkedCalendarTasks(), result.count(), result.error()), success, failure);
+        }, failure);
+    }
+
+    private record GoogleSyncOutcome(int count, String error) { }
+
+    public record GoogleSyncState(boolean connected, Set<String> linkedTasks, int synced, String error) { }
+
     public void openGoogleSetup() {
         openBrowser("https://developers.google.com/identity/protocols/oauth2/native-app");
     }
@@ -424,6 +470,10 @@ public final class StudyFlowController {
     }
 
     private <T> void submit(Supplier<T> work, Consumer<T> success, Consumer<String> failure) {
+        submit(worker, work, success, failure);
+    }
+
+    private static <T> void submit(Executor worker, Supplier<T> work, Consumer<T> success, Consumer<String> failure) {
         try {
             worker.execute(() -> {
                 try {

@@ -1,5 +1,11 @@
 # StudyFlow verification
 
+## Release 0.2.1
+
+Maven verification passed **192 tests**. Mock Google responses covered dated task creation and edits, reconnect catch-up, retry without duplicates, cancellation, manual removal, and loading profiles from before auto-sync. A Swing probe checked confirmation, persistence across reopen, the paused state while signed out, and turning sync off. No real Google account was used.
+
+[Integration settings in light mode](screenshots/calendar-auto-sync/settings-light-1024x700.png) and [dark mode](screenshots/calendar-auto-sync/settings-dark-1366x768.png) show the new option with sample task data.
+
 ## Release 0.2.0
 
 Windows 11 x64, Microsoft OpenJDK/Javac 21.0.13.0.2, Maven 3.9.16. `mvn -B -o clean verify` succeeded. Summing 26 Surefire XML reports: **182 tests, zero failures, errors or skipped**. The shaded JAR and unsigned `jpackage` app image opened and closed using isolated profiles.

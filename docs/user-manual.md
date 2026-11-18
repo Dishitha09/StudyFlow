@@ -71,7 +71,12 @@ StudyFlow extracts existing PDF text. Image-only scans may need OCR before uploa
 
 ### Optional connections
 
-- **Google Calendar.** From **Calendar**, choose **Google Calendar**. Select dated tasks and choose **Export .ics** for a file you can import without connecting StudyFlow. For live sync, choose **Setup help** and configure a desktop OAuth client before launching StudyFlow. Choose **Connect Google**, authorize in the browser, then sync selected deadlines to the primary calendar. Sync again after editing a task or subject to update its linked event. To remove an event from both places, use **Remove event** before deleting the StudyFlow task. Google-side edits do not flow back to StudyFlow. Reconnect after restarting.
+**Google Calendar.** From **Calendar**, choose **Google Calendar**. Select dated tasks and choose **Export .ics** for a file you can import without signing in. For live sync, choose **Setup help** and configure a desktop OAuth client before launching StudyFlow. Choose **Connect Google** and authorize in the browser. **Sync selected** sends or updates the selected tasks as all-day events in your primary calendar.
+
+**Auto-sync dated tasks** starts off. To enable it, go to **Settings → Integrations → Google Calendar**, check the box, and confirm. When you enable it or reconnect, StudyFlow syncs existing dated tasks, including completed tasks. While StudyFlow is open and connected, it sends new dated tasks and changes to event details and retries temporary failures. Changes made in Google do not flow back to StudyFlow. Sign in again after restarting. Clear the checkbox to stop automatic sends.
+
+Clearing a deadline or deleting a local task leaves its Google event in place. To remove the linked event, select the task and choose **Remove event** before clearing its deadline or deleting it. This keeps auto-sync from recreating that event for the task and account. To send the task again, use **Sync selected**.
+
 - **Spotify.** Paste an `https://open.spotify.com/` link in **Integrations**, choose **Save link**, then **Open playlist** to launch the saved item in your browser.
 - **OpenAI.** Set `OPENAI_API_KEY` before launching StudyFlow. The model defaults to `gpt-6-luna` and can be changed with `STUDYFLOW_OPENAI_MODEL`. **Test provider** checks model access. Choosing **Use configured AI provider** and consenting sends selected source passages and your request. Leave it off for local study.
 

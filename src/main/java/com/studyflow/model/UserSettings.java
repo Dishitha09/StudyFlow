@@ -15,6 +15,7 @@ public final class UserSettings {
     private boolean notificationsEnabled;
     private Duration focusDuration;
     private Duration breakDuration;
+    private boolean googleAutoSyncEnabled;
 
     public UserSettings() {
         this(DEFAULT_THEME, DEFAULT_PRIORITY, 75, true, Duration.ofMinutes(25), Duration.ofMinutes(5));
@@ -81,8 +82,18 @@ public final class UserSettings {
         this.breakDuration = ValidationUtils.positiveDuration(breakDuration, "Break duration");
     }
 
+    public boolean isGoogleAutoSyncEnabled() {
+        return googleAutoSyncEnabled;
+    }
+
+    public void setGoogleAutoSyncEnabled(boolean enabled) {
+        this.googleAutoSyncEnabled = enabled;
+    }
+
     public UserSettings copy() {
-        return new UserSettings(theme, defaultPriority, defaultAttendanceTarget,
+        UserSettings copy = new UserSettings(theme, defaultPriority, defaultAttendanceTarget,
                 notificationsEnabled, focusDuration, breakDuration);
+        copy.setGoogleAutoSyncEnabled(googleAutoSyncEnabled);
+        return copy;
     }
 }

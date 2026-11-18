@@ -100,10 +100,12 @@ public final class Main {
 
     private static void openWindow(AppConfig config, StudyFlowContext context, ExecutorService worker,
                                    CompletableFuture<Void> finished, Clock clock) {
+        ExecutorService calendarWorker = Executors.newSingleThreadExecutor(
+                Thread.ofPlatform().name("studyflow-calendar").factory());
         try {
             Theme theme = context.settings().getTheme();
             ViewStyle.applyTheme(theme);
-            MainFrame frame = new MainFrame(config, new StudyFlowController(context, worker, clock), theme);
+            MainFrame frame = new MainFrame(config, new StudyFlowController(context, worker, calendarWorker, clock), theme);
             frame.addWindowListener(new WindowAdapter() {
                 private boolean closing;
 
@@ -112,23 +114,25 @@ public final class Main {
                     if (!closing && frame.confirmClose()) {
                         closing = true;
                         frame.setClosing();
-                        finish(context, worker, finished, frame::dispose, null);
+                        finish(context, worker, calendarWorker, finished, frame::dispose, null);
                     }
                 }
             });
             frame.setVisible(true);
         } catch (RuntimeException error) {
             AppLog.failure("application.window.failed", error);
-            finish(context, worker, finished, () -> { }, error);
+            finish(context, worker, calendarWorker, finished, () -> { }, error);
         }
     }
 
     /** Queue resource cleanup after any outstanding saves, then close the window on the EDT. */
-    private static void finish(StudyFlowContext context, ExecutorService worker, CompletableFuture<Void> finished,
-                               Runnable dispose, RuntimeException startupError) {
+    private static void finish(StudyFlowContext context, ExecutorService worker, ExecutorService calendarWorker,
+                               CompletableFuture<Void> finished, Runnable dispose, RuntimeException startupError) {
+        calendarWorker.shutdownNow();
         worker.execute(() -> {
             Exception failure = startupError;
             try {
+                calendarWorker.close();
                 context.close();
                 AppLog.event("application.stop");
             } catch (IOException closeError) {

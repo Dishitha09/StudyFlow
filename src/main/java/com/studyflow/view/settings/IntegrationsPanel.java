@@ -25,6 +25,7 @@ import javax.swing.BorderFactory;
 import javax.swing.DefaultListCellRenderer;
 import javax.swing.DefaultListModel;
 import javax.swing.JButton;
+import javax.swing.JCheckBox;
 import javax.swing.JFileChooser;
 import javax.swing.JComponent;
 import javax.swing.JLabel;
@@ -48,6 +49,7 @@ public final class IntegrationsPanel extends JPanel {
         void testGoogle();
         void openGoogleSetup();
         void openGoogleCalendar();
+        void setAutoSync(boolean enabled);
         void editSubject(String subjectId);
         void sync(List<String> taskIds);
         void removeEvent(String taskId);
@@ -69,6 +71,11 @@ public final class IntegrationsPanel extends JPanel {
     private final JButton testGoogle = new JButton("Test connection");
     private final JButton setup = new JButton("Setup help");
     private final JButton openGoogle = new JButton("Open Google Calendar");
+    private final JCheckBox autoSync = new JCheckBox("Auto-sync dated tasks");
+    private final JLabel autoSyncStatus = ViewStyle.muted(" ");
+    private boolean autoSyncEnabled;
+    private String autoSyncFeedback;
+    private String autoSyncError;
     private final JButton sync = ViewStyle.primary(new JButton("Sync selected"));
     private final JButton removeEvent = new JButton("Remove event");
     private final JButton export = new JButton("Export .ics");
@@ -92,6 +99,7 @@ public final class IntegrationsPanel extends JPanel {
     private boolean linksAvailable = true;
     private Set<String> linkedTasks = Set.of();
     private Map<String, String> subjects = Map.of();
+    private List<Task> items = List.of();
 
     public IntegrationsPanel(Actions actions) {
         super(new BorderLayout());
@@ -109,14 +117,34 @@ public final class IntegrationsPanel extends JPanel {
 
     public void showData(List<Task> items, List<Subject> courses, boolean googleConfigured, boolean googleConnected,
                          Set<String> linkedTasks, boolean aiConfigured, List<String> playlistLinks,
-                         String storageWarning) {
+                         String storageWarning, boolean autoSyncEnabled) {
         this.googleConfigured = googleConfigured;
-        this.googleConnected = googleConnected;
         this.aiConfigured = aiConfigured;
         linksAvailable = storageWarning == null;
-        this.linkedTasks = Set.copyOf(linkedTasks);
+        this.items = List.copyOf(items);
+        if (this.autoSyncEnabled != autoSyncEnabled || this.googleConnected != googleConnected) {
+            autoSyncFeedback = null;
+            autoSyncError = null;
+        }
+        this.autoSyncEnabled = autoSyncEnabled;
+        autoSync.setSelected(autoSyncEnabled);
         subjects = courses.stream().collect(Collectors.toMap(Subject::getId,
                 course -> course.getName() + " (" + course.getSubjectCode() + ")"));
+        showGoogleState(googleConnected, linkedTasks);
+        aiStatus.setText(aiConfigured ? "Configured · Test model access."
+                : "Unconfigured · Set OPENAI_API_KEY to enable remote study requests.");
+        googleStatus.setToolTipText(storageWarning);
+        spotifyStatus.setToolTipText(storageWarning);
+        spotifyStatus.setText(!linksAvailable ? "Saved links unavailable. The local file was kept for recovery."
+                : playlistLinks.isEmpty() ? "No playlist links saved."
+                : playlistLinks.size() + (playlistLinks.size() == 1 ? " saved playlist" : " saved playlists"));
+        refreshPlaylists(playlistLinks);
+        updateControls();
+    }
+
+    public void showGoogleState(boolean connected, Set<String> linkedTasks) {
+        googleConnected = connected;
+        this.linkedTasks = Set.copyOf(linkedTasks);
         if (!linksAvailable) {
             googleStatus.setText("Local link file unavailable. Calendar file export still works.");
         } else if (googleConnected) {
@@ -126,17 +154,35 @@ public final class IntegrationsPanel extends JPanel {
         } else {
             googleStatus.setText("Setup required for live sync. You can still export a calendar file.");
         }
-        aiStatus.setText(aiConfigured ? "Configured · Test model access."
-                : "Unconfigured · Set OPENAI_API_KEY to enable remote study requests.");
-        googleStatus.setToolTipText(storageWarning);
-        spotifyStatus.setToolTipText(storageWarning);
-        spotifyStatus.setText(!linksAvailable ? "Saved links unavailable. The local file was kept for recovery."
-                : playlistLinks.isEmpty() ? "No playlist links saved."
-                : playlistLinks.size() + (playlistLinks.size() == 1 ? " saved playlist" : " saved playlists"));
-        refreshTasks(items.stream().filter(task -> task.getDueDate() != null || linkedTasks.contains(task.getId()))
+        refreshTasks(items.stream().filter(task -> task.getDueDate() != null || this.linkedTasks.contains(task.getId()))
                 .sorted().toList());
-        refreshPlaylists(playlistLinks);
+        updateAutoSyncStatus();
         updateControls();
+    }
+
+    public void setAutoSyncFeedback(String message) {
+        autoSyncFeedback = message;
+        autoSyncError = null;
+        updateAutoSyncStatus();
+    }
+
+    public void showAutoSyncError(String detail) {
+        autoSyncFeedback = googleConnected ? "Auto-sync did not finish. StudyFlow will retry."
+                : "Auto-sync paused. Reconnect Google to resume.";
+        autoSyncError = detail;
+        updateAutoSyncStatus();
+    }
+
+    private void updateAutoSyncStatus() {
+        String message = autoSyncFeedback;
+        if (message == null) {
+            if (!autoSyncEnabled) message = "Off. Turn on to send dated tasks and edits automatically.";
+            else if (!googleConnected) message = "Paused. Connect Google to resume auto-sync.";
+            else if (!linksAvailable) message = "Paused. StudyFlow could not read saved integration links.";
+            else message = "On. Dated tasks and edits sync while StudyFlow is open and connected.";
+        }
+        autoSyncStatus.setText(message);
+        autoSyncStatus.setToolTipText(autoSyncError == null ? message : autoSyncError);
     }
 
     public void setBusy(boolean busy) {
@@ -175,7 +221,21 @@ public final class IntegrationsPanel extends JPanel {
         JLabel hint = ViewStyle.muted("<html>Sync sends selected task titles, dates, descriptions and subjects to Google as "
                 + "all-day events. Google edits don’t update StudyFlow. Use Export .ics without signing in.</html>");
         hint.setLabelFor(tasks);
-        taskArea.add(hint, BorderLayout.PAGE_START);
+        JPanel syncOptions = transparent(new BorderLayout(0, 4));
+        JPanel autoOptions = actions();
+        autoSync.setName("integrationsGoogleAutoSync");
+        autoSync.setOpaque(false);
+        autoSync.addActionListener(event -> toggleAutoSync());
+        autoSyncStatus.setName("integrationsGoogleAutoSyncStatus");
+        autoSyncStatus.putClientProperty("html.disable", Boolean.TRUE);
+        autoOptions.add(autoSync);
+        JPanel autoInfo = transparent(new BorderLayout());
+        autoInfo.add(autoOptions, BorderLayout.PAGE_START);
+        autoSyncStatus.setBorder(BorderFactory.createEmptyBorder(0, 6, 1, 0));
+        autoInfo.add(autoSyncStatus, BorderLayout.CENTER);
+        syncOptions.add(autoInfo, BorderLayout.PAGE_START);
+        syncOptions.add(hint, BorderLayout.CENTER);
+        taskArea.add(syncOptions, BorderLayout.PAGE_START);
         tasks.setName("integrationsCalendarTasks");
         tasks.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
         tasks.getAccessibleContext().setAccessibleName("Tasks for calendar sync or export");
@@ -195,6 +255,7 @@ public final class IntegrationsPanel extends JPanel {
         tasks.addListSelectionListener(event -> updateControls());
         JScrollPane taskScroll = ViewStyle.scroll(tasks);
         taskScroll.setPreferredSize(new Dimension(0, 108));
+        taskScroll.setMinimumSize(new Dimension(0, 94));
         taskArea.add(taskScroll, BorderLayout.CENTER);
         JPanel picks = actions();
         bind(selectDated, "integrationsGoogleSelectDated", () -> tasks.setSelectedIndices(
@@ -222,6 +283,20 @@ public final class IntegrationsPanel extends JPanel {
         events.add(openGoogle);
         inner.add(events, BorderLayout.PAGE_END);
         return card;
+    }
+
+    private void toggleAutoSync() {
+        boolean enabled = autoSync.isSelected();
+        // The checkbox reflects saved state, including when the user cancels or saving fails.
+        autoSync.setSelected(autoSyncEnabled);
+        if (!enabled || JOptionPane.showConfirmDialog(this,
+                "Send all existing and future dated tasks to your primary Google Calendar while StudyFlow is open?\n"
+                        + "This shares task titles, deadlines, descriptions and subjects with Google.\n"
+                        + "Deleting a task here won't remove its Google event.",
+                "Turn on automatic Google Calendar sync", JOptionPane.OK_CANCEL_OPTION,
+                JOptionPane.QUESTION_MESSAGE) == JOptionPane.OK_OPTION) {
+            actions.setAutoSync(enabled);
+        }
     }
 
     private void showGoogleSetup() {
@@ -263,6 +338,7 @@ public final class IntegrationsPanel extends JPanel {
         playlists.addListSelectionListener(event -> updateControls());
         JScrollPane playlistScroll = ViewStyle.scroll(playlists);
         playlistScroll.setPreferredSize(new Dimension(0, 72));
+        playlistScroll.setMinimumSize(new Dimension(0, 54));
         card.add(playlistScroll, BorderLayout.CENTER);
         JPanel controls = actions();
         bind(openPlaylist, "integrationsPlaylistOpen", () -> actions.openPlaylist(playlists.getSelectedValue()));
@@ -325,7 +401,9 @@ public final class IntegrationsPanel extends JPanel {
     private void removeSelectedEvent() {
         Task selected = singleTask();
         if (!busy && googleConnected && selected != null && JOptionPane.showConfirmDialog(this,
-                "Remove the corresponding event from Google Calendar?", "Remove calendar event",
+                "Remove the corresponding event from Google Calendar?\n"
+                        + "Auto-sync will skip this task unless you send it again using Sync selected.",
+                "Remove calendar event",
                 JOptionPane.OK_CANCEL_OPTION, JOptionPane.WARNING_MESSAGE) == JOptionPane.OK_OPTION) {
             actions.removeEvent(selected.getId());
         }
@@ -382,6 +460,7 @@ public final class IntegrationsPanel extends JPanel {
         cancelConnect.setEnabled(googleConnecting);
         disconnect.setEnabled(!busy && googleConnected);
         testGoogle.setEnabled(!busy && googleConnected);
+        autoSync.setEnabled(!busy && (autoSyncEnabled || (linksAvailable && googleConfigured)));
         sync.setEnabled(!busy && linksAvailable && googleConnected && dated);
         removeEvent.setEnabled(!busy && linksAvailable && googleConnected && item != null
                 && linkedTasks.contains(item.getId()));

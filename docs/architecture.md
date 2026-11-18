@@ -13,7 +13,7 @@ StudyFlow is a single-user, local-first Java 21 desktop application. Maven build
 | `model`, `interfaces`, `utils` | Model academic records and enforce their intrinsic invariants. Define contracts and shared validation | Java standard library |
 | `factory`, `strategy` | Centralize task creation by type and provide interchangeable comparators | Domain types |
 | `repository` | Translate validated snapshots to local storage and restore them, using Jackson and file utilities | Storage contracts, domain types and Jackson |
-| `integrations` | Export iCalendar, send explicitly selected Calendar changes, open Spotify URLs and implement the optional AI provider | Java HTTP and desktop APIs, JSON, `AIProvider` |
+| `integrations` | Export iCalendar, send dated tasks to Google Calendar, open Spotify URLs and implement the optional AI provider | Java HTTP and desktop APIs, JSON, `AIProvider` |
 
 `Main` owns the runtime lifecycle and `StudyFlowContext` assembles the profile. Dependencies are passed to constructors so tests can use an in-memory store and a fixed `Clock`. A repository adapter can change without requiring Swing or the domain to change. The view never opens a JSON file. Services have no Swing dependency.
 
@@ -82,7 +82,7 @@ The CLI supports `tasks`, `subjects`, `workspaces`, `notes`, `settings`, `attend
 
 `AnalyticsService` aggregates an inclusive date range from task completion timestamps, focus completion instants and class dates. It uses the profile clock's local zone for timestamps and the saved actual focus duration. Current task inventory remains a separate calculation. Legacy completed tasks can have `completedAt == null`. Their date is unknown and they are excluded from dated completions. Reopening preserves the latest recorded completion, and recompleting updates it. The task repository keeps no separate event ledger. Removing a task therefore also removes its completion from reports.
 
-Calendar and Kanban project existing tasks, and Calendar can export selected deadlines to `.ics` offline. The Google adapter uses a desktop OAuth browser flow and a session-only in-memory token, while the local store retains task-to-event links. Google work is explicit and one-way. Spotify shortcuts pass normalized web URLs to the default browser. The integrations and remote assistant are optional, and automated provider tests exercise simulated responses. The local workflows need no provider account.
+Calendar and Kanban project existing tasks, and Calendar can export selected deadlines to `.ics` offline. The Google adapter uses a desktop OAuth browser flow with session-only tokens. Manual sync sends selected tasks. Optional auto-sync sends eligible dated tasks when enabled or reconnected and processes changes while StudyFlow is open and connected. Sync is one-way. The local store retains task-to-event links and records manual removals per task and account. Spotify shortcuts pass normalized web URLs to the default browser. The integrations and remote assistant are optional, and automated provider tests exercise simulated responses. The local workflows need no provider account.
 
 ## Desktop pages
 

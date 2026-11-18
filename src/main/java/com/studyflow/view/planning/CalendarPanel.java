@@ -100,6 +100,13 @@ public final class CalendarPanel extends JPanel {
         render();
     }
 
+    public void updateLinkedTasks(Set<String> linkedTasks) {
+        if (!this.linkedTasks.equals(linkedTasks)) {
+            this.linkedTasks = Set.copyOf(linkedTasks);
+            showDate();
+        }
+    }
+
     private JPanel monthCard() {
         JPanel card = ViewStyle.card(new BorderLayout(0, 10));
         card.setBorder(BorderFactory.createEmptyBorder(14, 15, 15, 15));

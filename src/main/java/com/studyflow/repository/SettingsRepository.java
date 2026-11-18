@@ -45,17 +45,20 @@ public final class SettingsRepository implements Storage<UserSettings> {
     }
 
     record SettingsRecord(Theme theme, Priority defaultPriority, Integer defaultAttendanceTarget,
-                          Boolean notificationsEnabled, Duration focusDuration, Duration breakDuration) {
+                          Boolean notificationsEnabled, Duration focusDuration, Duration breakDuration,
+                          Boolean googleAutoSyncEnabled) {
         static SettingsRecord from(UserSettings settings) {
             return new SettingsRecord(settings.getTheme(), settings.getDefaultPriority(),
                     settings.getDefaultAttendanceTarget(), settings.isNotificationsEnabled(),
-                    settings.getFocusDuration(), settings.getBreakDuration());
+                    settings.getFocusDuration(), settings.getBreakDuration(), settings.isGoogleAutoSyncEnabled());
         }
 
         UserSettings toDomain() {
-            return new UserSettings(theme, defaultPriority,
+            UserSettings settings = new UserSettings(theme, defaultPriority,
                     ValidationUtils.required(defaultAttendanceTarget, "Attendance target"),
                     ValidationUtils.required(notificationsEnabled, "Notification preference"), focusDuration, breakDuration);
+            settings.setGoogleAutoSyncEnabled(Boolean.TRUE.equals(googleAutoSyncEnabled));
+            return settings;
         }
     }
 }

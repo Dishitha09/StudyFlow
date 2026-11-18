@@ -4,8 +4,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.studyflow.model.GeneralTask;
 import com.studyflow.model.Priority;
+import com.studyflow.model.Subject;
 import com.studyflow.model.Task;
 import com.studyflow.model.TaskStatus;
+import com.studyflow.repository.FileStorage;
+import com.studyflow.repository.IntegrationRepository;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.net.URI;
@@ -15,6 +18,8 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.time.Clock;
 import java.time.Instant;
@@ -23,16 +28,25 @@ import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.Base64;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Flow;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import static org.junit.jupiter.api.Assertions.*;
 
 class GoogleCalendarLifecycleTest {
     private static final LocalDate DATE = LocalDate.of(2026, 11, 17);
+
+    @TempDir
+    Path profile;
 
     @Test void oauthRejectsForeignStateAndUsesPkceThenSyncUpdatesWithoutCreatingDuplicates() throws Exception {
         var clock = new MutableClock();
@@ -90,6 +104,208 @@ class GoogleCalendarLifecycleTest {
         assertTrue(outcome.get(5, TimeUnit.SECONDS).getMessage().contains("cancelled"));
         assertFalse(calendar.connected());
         assertEquals(0, provider.grants);
+    }
+
+    @Test void automaticSyncDoesNotSendRequestsWhenOffDisconnectedCancelledOrUndated() throws Exception {
+        var clock = new MutableClock();
+        var provider = new GoogleFixture();
+        GoogleCalendar calendar = connected(clock, provider);
+        Task dated = task("dated", DATE);
+        try (FileStorage storage = new FileStorage(profile)) {
+            var integrations = new LocalIntegrations(new IntegrationRepository(storage), calendar, clock);
+            int before = provider.calendarRequests;
+            assertEquals(0, integrations.syncAutomatically(false, List.of(dated), List.of(), () -> false));
+            assertEquals(0, integrations.syncAutomatically(true, List.of(dated), List.of(), () -> true));
+            assertEquals(0, integrations.syncAutomatically(true, List.of(task("undated", null)), List.of(),
+                    () -> false));
+            calendar.disconnect();
+            assertEquals(0, integrations.syncAutomatically(true, List.of(dated), List.of(), () -> false));
+            assertEquals(before, provider.calendarRequests);
+        }
+    }
+
+    @Test void automaticSyncChecksPersistedContentAndKeepsMappingsSeparateByCalendar() throws Exception {
+        var clock = new MutableClock();
+        var provider = new GoogleFixture();
+        GoogleCalendar calendar = connected(clock, provider);
+        Task task = task("dated", DATE);
+        var subject = new Subject("optics", "Optics", "PHY101", "", List.of());
+        task.setSubjectId(subject.getId());
+        String id = GoogleCalendar.eventId(task.getId());
+        try (FileStorage storage = new FileStorage(profile)) {
+            var integrations = new LocalIntegrations(new IntegrationRepository(storage), calendar, clock);
+            assertEquals(1, integrations.syncAutomatically(true, List.of(task), List.of(subject), () -> false));
+            assertTrue(provider.events.get(id).path("description").asText().contains("Optics (PHY101)"));
+        }
+
+        calendar.disconnect();
+        task.setDueDate(DATE.plusDays(2));
+        subject.setName("Applied Optics");
+        try (FileStorage storage = new FileStorage(profile)) {
+            var integrations = new LocalIntegrations(new IntegrationRepository(storage), calendar, clock);
+            assertEquals(0, integrations.syncAutomatically(true, List.of(task), List.of(subject), () -> false));
+            assertEquals(0, provider.updated);
+            calendar.connect();
+            assertEquals(1, integrations.syncAutomatically(true, List.of(task), List.of(subject), () -> false));
+            assertEquals(1, provider.created);
+            assertEquals(1, provider.updated);
+            assertEquals(DATE.plusDays(2).toString(), provider.events.get(id).at("/start/date").asText());
+            assertTrue(provider.events.get(id).path("description").asText().contains("Applied Optics (PHY101)"));
+        }
+
+        try (FileStorage storage = new FileStorage(profile)) {
+            var reopened = new LocalIntegrations(new IntegrationRepository(storage), calendar, clock);
+            int before = provider.calendarRequests;
+            assertEquals(0, reopened.syncAutomatically(true, List.of(task), List.of(subject), () -> false));
+            assertEquals(before, provider.calendarRequests);
+
+            var otherProvider = new GoogleFixture("another-calendar");
+            GoogleCalendar otherCalendar = connected(clock, otherProvider);
+            var otherAccount = new LocalIntegrations(new IntegrationRepository(storage), otherCalendar, clock);
+            assertEquals(1, otherAccount.syncAutomatically(true, List.of(task), List.of(subject), () -> false));
+            assertEquals(1, otherProvider.created);
+            assertEquals(1, provider.created);
+            assertTrue(otherProvider.events.containsKey(id));
+            assertEquals(before, provider.calendarRequests);
+        }
+    }
+
+    @Test void automaticSyncRetriesAnInterruptedBatchWithoutDuplicatingAcknowledgedOrUncertainEvents() throws Exception {
+        var clock = new MutableClock();
+        var provider = new GoogleFixture();
+        GoogleCalendar calendar = connected(clock, provider);
+        Task first = task("first", DATE);
+        Task second = task("second", DATE.plusDays(1));
+        String uncertain = GoogleCalendar.eventId(second.getId());
+        provider.loseCreateResponseFor = uncertain;
+        try (FileStorage storage = new FileStorage(profile)) {
+            var integrations = new LocalIntegrations(new IntegrationRepository(storage), calendar, clock);
+            assertThrows(IOException.class,
+                    () -> integrations.syncAutomatically(true, List.of(first, second), List.of(), () -> false));
+            assertEquals(2, provider.created);
+            assertEquals(0, provider.updated);
+            assertTrue(integrations.linkedCalendarTasks().contains(first.getId()));
+            assertFalse(integrations.linkedCalendarTasks().contains(second.getId()));
+
+            assertEquals(1, integrations.syncAutomatically(true, List.of(first, second), List.of(), () -> false));
+            assertEquals(2, provider.created);
+            assertEquals(1, provider.updated);
+            assertTrue(provider.events.containsKey(uncertain));
+            assertTrue(integrations.linkedCalendarTasks().containsAll(List.of(first.getId(), second.getId())));
+        }
+    }
+
+    @Test void automaticSyncStopsBetweenEventsWhenCancellationIsRequested() throws Exception {
+        var clock = new MutableClock();
+        var provider = new GoogleFixture();
+        GoogleCalendar calendar = connected(clock, provider);
+        Task first = task("first", DATE);
+        Task second = task("second", DATE.plusDays(1));
+        try (FileStorage storage = new FileStorage(profile)) {
+            var integrations = new LocalIntegrations(new IntegrationRepository(storage), calendar, clock);
+            assertEquals(1, integrations.syncAutomatically(true, List.of(first, second), List.of(),
+                    () -> provider.created > 0));
+            assertFalse(provider.events.containsKey(GoogleCalendar.eventId(second.getId())));
+            assertEquals(1, integrations.syncAutomatically(true, List.of(first, second), List.of(), () -> false));
+            assertEquals(2, provider.created);
+            assertEquals(0, provider.updated);
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void automaticSyncCancellationDuringLookupStopsTheFollowingCreateOrUpdate(boolean existingEvent) throws Exception {
+        var clock = new MutableClock();
+        var provider = new GoogleFixture();
+        GoogleCalendar calendar = connected(clock, provider);
+        Task task = task("looked-up", DATE);
+        if (existingEvent) {
+            calendar.upsert(task, null);
+            task.setTitle("Changed while offline");
+        }
+        var cancelled = new AtomicBoolean();
+        provider.afterEventRead = () -> cancelled.set(true);
+        try (FileStorage storage = new FileStorage(profile)) {
+            var integrations = new LocalIntegrations(new IntegrationRepository(storage), calendar, clock);
+            assertEquals(0, integrations.syncAutomatically(true, List.of(task), List.of(), cancelled::get));
+            assertTrue(cancelled.get());
+            assertEquals(existingEvent ? 1 : 0, provider.created);
+            assertEquals(0, provider.updated);
+            assertFalse(integrations.linkedCalendarTasks().contains(task.getId()));
+        }
+    }
+
+    @Test void automaticSyncStillSendsValidTasksAfterANonExportableDate() throws Exception {
+        var clock = new MutableClock();
+        var provider = new GoogleFixture();
+        GoogleCalendar calendar = connected(clock, provider);
+        Task invalid = task("non-exportable", LocalDate.of(9999, 12, 31));
+        Task valid = task("valid-range", DATE);
+        try (FileStorage storage = new FileStorage(profile)) {
+            var integrations = new LocalIntegrations(new IntegrationRepository(storage), calendar, clock);
+            assertThrows(IllegalArgumentException.class,
+                    () -> integrations.syncAutomatically(true, List.of(invalid, valid), List.of(), () -> false));
+            assertEquals(1, provider.created);
+            assertTrue(provider.events.containsKey(GoogleCalendar.eventId(valid.getId())));
+            assertFalse(provider.events.containsKey(GoogleCalendar.eventId(invalid.getId())));
+            assertEquals(Set.of(valid.getId()), integrations.linkedCalendarTasks());
+        }
+    }
+
+    @Test void automaticSyncUpgradesALegacyMappingWithoutCreatingAnotherEvent() throws Exception {
+        var clock = new MutableClock();
+        var provider = new GoogleFixture();
+        GoogleCalendar calendar = connected(clock, provider);
+        Task task = task("legacy", DATE);
+        String eventId = calendar.upsert(task, null);
+        String mapping = "google:" + calendar.connectedCalendarId() + ":" + task.getId();
+        try (FileStorage storage = new FileStorage(profile)) {
+            var repository = new IntegrationRepository(storage);
+            Files.writeString(profile.resolve("integrations/links.json"),
+                    "[{\"id\":\"" + mapping + "\",\"type\":\"google\",\"value\":\"" + eventId + "\"}]");
+            var integrations = new LocalIntegrations(repository, calendar, clock);
+            assertTrue(integrations.linkedCalendarTasks().contains(task.getId()));
+            assertEquals(1, integrations.syncAutomatically(true, List.of(task), List.of(), () -> false));
+            assertEquals(1, provider.created);
+            assertEquals(1, provider.updated);
+            int before = provider.calendarRequests;
+            assertEquals(0, integrations.syncAutomatically(true, List.of(task), List.of(), () -> false));
+            assertEquals(before, provider.calendarRequests);
+        }
+    }
+
+    @Test void manuallyRemovedEventRemainsSuppressedAcrossReopenUntilExplicitSync() throws Exception {
+        var clock = new MutableClock();
+        var provider = new GoogleFixture();
+        GoogleCalendar calendar = connected(clock, provider);
+        Task task = task("manually-removed", DATE);
+        try (FileStorage storage = new FileStorage(profile)) {
+            var integrations = new LocalIntegrations(new IntegrationRepository(storage), calendar, clock);
+            assertEquals(1, integrations.syncAutomatically(true, List.of(task), List.of(), () -> false));
+            integrations.deleteEvent(task.getId());
+            assertEquals(1, provider.deleted);
+            assertTrue(provider.events.isEmpty());
+            assertFalse(integrations.linkedCalendarTasks().contains(task.getId()));
+        }
+
+        try (FileStorage storage = new FileStorage(profile)) {
+            var reopened = new LocalIntegrations(new IntegrationRepository(storage), calendar, clock);
+            task.setTitle("Offline edit");
+            int before = provider.calendarRequests;
+            assertEquals(0, reopened.syncAutomatically(true, List.of(task), List.of(), () -> false));
+            assertEquals(before, provider.calendarRequests);
+            reopened.sync(List.of(task), List.of());
+            assertEquals(2, provider.created);
+            assertEquals("Offline edit", provider.events.get(GoogleCalendar.eventId(task.getId()))
+                    .path("summary").asText());
+            before = provider.calendarRequests;
+            assertEquals(0, reopened.syncAutomatically(true, List.of(task), List.of(), () -> false));
+            assertEquals(before, provider.calendarRequests);
+        }
+    }
+
+    private static Task task(String id, LocalDate deadline) {
+        return new GeneralTask(id, "Read chapter", "", null, DATE, deadline, Priority.HIGH, TaskStatus.TODO);
     }
 
     private static GoogleCalendar connected(MutableClock clock, GoogleFixture provider) throws IOException {
@@ -155,9 +371,21 @@ class GoogleCalendarLifecycleTest {
     private static final class GoogleFixture implements GoogleCalendar.Transport {
         private final ObjectMapper mapper = new ObjectMapper();
         private final Map<String, ObjectNode> events = new HashMap<>();
+        private final String calendarId;
         private String challenge;
-        private int created, updated, deleted, grants, refreshes;
+        private String loseCreateResponseFor;
+        private Runnable afterEventRead = () -> { };
+        private int created, updated, deleted, grants, refreshes, calendarRequests;
         private boolean unauthorized;
+
+        private GoogleFixture() {
+            this("qa-calendar");
+        }
+
+        private GoogleFixture(String calendarId) {
+            this.calendarId = calendarId;
+        }
+
         @Override public GoogleCalendar.Exchange send(HttpRequest request) throws IOException {
             if (request.uri().getHost().equals("oauth2.googleapis.com")) {
                 var fields = form(body(request));
@@ -179,17 +407,28 @@ class GoogleCalendarLifecycleTest {
             }
             assertEquals("www.googleapis.com", request.uri().getHost());
             assertEquals("Bearer fixture-access", request.headers().firstValue("Authorization").orElseThrow());
+            calendarRequests++;
             if (unauthorized) return new GoogleCalendar.Exchange(401, "{}");
             String path = request.uri().getPath();
-            if (path.endsWith("/primary")) return new GoogleCalendar.Exchange(200, "{\"id\":\"qa-calendar\"}");
+            if (path.endsWith("/primary")) {
+                return new GoogleCalendar.Exchange(200, mapper.createObjectNode().put("id", calendarId).toString());
+            }
             String id = path.substring(path.lastIndexOf('/') + 1);
             return switch (request.method()) {
-                case "GET" -> events.containsKey(id) ? new GoogleCalendar.Exchange(200, events.get(id).toString())
-                        : new GoogleCalendar.Exchange(404, "{}");
+                case "GET" -> {
+                    afterEventRead.run();
+                    yield events.containsKey(id) ? new GoogleCalendar.Exchange(200, events.get(id).toString())
+                            : new GoogleCalendar.Exchange(404, "{}");
+                }
                 case "POST" -> {
                     var event = (ObjectNode) mapper.readTree(body(request));
-                    assertNull(events.put(event.path("id").asText(), event));
+                    String eventId = event.path("id").asText();
+                    assertNull(events.put(eventId, event));
                     created++;
+                    if (eventId.equals(loseCreateResponseFor)) {
+                        loseCreateResponseFor = null;
+                        throw new IOException("Simulated connection loss after Google saved the event.");
+                    }
                     yield new GoogleCalendar.Exchange(200, event.toString());
                 }
                 case "PATCH" -> {
