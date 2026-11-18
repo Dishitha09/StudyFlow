@@ -1,5 +1,9 @@
 # StudyFlow verification
 
+## Release 0.2.5
+
+Maven verification passed **214 tests**. New attendance tests check starting totals across restarts, their interaction with dated classes and subject targets, invalid counts, and clearing totals without deleting dated history. They verify that date-filtered Analytics uses only dated classes. A compact Swing probe checked subject switching, the starting-totals editor and the combined totals.
+
 ## Release 0.2.4
 
 Maven verification passed **210 tests**. The material tests verify that original attachment bytes and subject assignments survive reopening, that non-PDF attachments stay out of page search, and that a PDF exceeding the page-indexing limit still opens as a local file. A Swing probe checked the subject filter and the actions for opening PDFs or revealing other attachments.

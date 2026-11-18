@@ -162,6 +162,11 @@ public final class MainFrame extends JFrame {
             }
 
             @Override
+            public void setBaseline(String subjectId, com.studyflow.service.AttendanceService.Baseline baseline) {
+                change(() -> controller.setAttendanceBaseline(subjectId, baseline), "Starting attendance totals saved.", null);
+            }
+
+            @Override
             public void setTarget(String subjectId, int target) {
                 change(() -> controller.setAttendanceTarget(subjectId, target), "Target saved.", null);
             }

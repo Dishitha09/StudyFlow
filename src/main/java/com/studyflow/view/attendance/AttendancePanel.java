@@ -2,6 +2,7 @@ package com.studyflow.view.attendance;
 
 import com.studyflow.model.AttendanceEntry;
 import com.studyflow.service.AttendanceMath.Projection;
+import com.studyflow.service.AttendanceService.Baseline;
 import com.studyflow.service.AttendanceService.Snapshot;
 import com.studyflow.service.AttendanceService.SubjectAttendance;
 import com.studyflow.view.ViewStyle;
@@ -19,6 +20,7 @@ import java.text.NumberFormat;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import javax.swing.BorderFactory;
 import javax.swing.DefaultListCellRenderer;
@@ -35,16 +37,21 @@ import javax.swing.JTable;
 import javax.swing.JTextField;
 import javax.swing.ListSelectionModel;
 import javax.swing.SpinnerNumberModel;
+import javax.swing.SwingConstants;
 import javax.swing.table.AbstractTableModel;
 
 /** Shows attendance calculations and lets students record or correct classes by subject. */
 public final class AttendancePanel extends JPanel {
+    private static final Baseline NO_BASELINE = new Baseline(0, 0);
+
     public interface Actions {
         void add(String subjectId, LocalDate date, boolean attended);
 
         void correct(String id, LocalDate date, boolean attended);
 
         void setTarget(String subjectId, int target);
+
+        void setBaseline(String subjectId, Baseline baseline);
     }
 
     private final Actions actions;
@@ -61,7 +68,10 @@ public final class AttendancePanel extends JPanel {
     private final JButton absent = new JButton("Add absent");
     private final JButton correct = new JButton("Correct selected");
     private final JButton target = new JButton("Change target");
+    private final JButton startingTotals = new JButton("Set starting totals");
+    private final JLabel baselineSummary = ViewStyle.muted("");
     private List<SubjectAttendance> currentSubjects = List.of();
+    private Map<String, Baseline> baselines = Map.of();
     private boolean busy;
     private boolean loading;
 
@@ -89,6 +99,7 @@ public final class AttendancePanel extends JPanel {
     public void showData(Snapshot snapshot) {
         String previousSubject = selectedSubjectId();
         currentSubjects = List.copyOf(snapshot.subjects());
+        baselines = Map.copyOf(snapshot.baselines());
         loading = true;
         subjects.removeAllItems();
         for (SubjectAttendance item : currentSubjects) {
@@ -153,7 +164,18 @@ public final class AttendancePanel extends JPanel {
         JPanel card = ViewStyle.card(new BorderLayout(0, 8));
         card.setBorder(BorderFactory.createEmptyBorder(14, 15, 14, 15));
         JPanel heading = transparent(new BorderLayout(0, 6));
-        heading.add(ViewStyle.subheading("Class history"), BorderLayout.PAGE_START);
+        JPanel title = transparent(new BorderLayout(8, 0));
+        JLabel historyTitle = ViewStyle.subheading("Class history");
+        historyTitle.setName("attendanceHistoryHeading");
+        title.add(historyTitle, BorderLayout.LINE_START);
+        baselineSummary.setName("attendanceBaselineSummary");
+        baselineSummary.setHorizontalAlignment(SwingConstants.TRAILING);
+        title.add(baselineSummary, BorderLayout.CENTER);
+        startingTotals.setName("attendanceBaselineButton");
+        startingTotals.setToolTipText("Set attendance totals for earlier classes");
+        startingTotals.addActionListener(event -> editBaseline());
+        title.add(startingTotals, BorderLayout.LINE_END);
+        heading.add(title, BorderLayout.PAGE_START);
         JPanel commands = transparent(new FlowLayout(FlowLayout.LEADING, 5, 0));
         JLabel dateLabel = new JLabel("Class date");
         dateLabel.setLabelFor(date);
@@ -186,6 +208,7 @@ public final class AttendancePanel extends JPanel {
 
     private void showSubject() {
         SubjectAttendance subject = selectedSubject();
+        showBaseline(subject);
         metrics.removeAll();
         projections.removeAll();
         if (subject == null) {
@@ -216,6 +239,18 @@ public final class AttendancePanel extends JPanel {
         metrics.repaint();
         projections.repaint();
         updateControls();
+    }
+
+    private void showBaseline(SubjectAttendance subject) {
+        boolean available = subject != null;
+        baselineSummary.setVisible(available);
+        if (available) {
+            Baseline baseline = baselines.getOrDefault(subject.subjectId(), NO_BASELINE);
+            String text = baseline.total() == 0 ? "No starting totals"
+                    : "Starting totals: " + baseline.attended() + " of " + baseline.total() + " attended";
+            baselineSummary.setText(text);
+            baselineSummary.setToolTipText(text);
+        }
     }
 
     private static String attendanceStatus(Projection value) {
@@ -308,6 +343,56 @@ public final class AttendancePanel extends JPanel {
         }
     }
 
+    private void editBaseline() {
+        SubjectAttendance subject = selectedSubject();
+        if (busy || subject == null) {
+            return;
+        }
+        Baseline baseline = baselines.getOrDefault(subject.subjectId(), NO_BASELINE);
+        JTextField priorAttended = new JTextField(Integer.toString(baseline.attended()), 10);
+        priorAttended.setName("attendanceBaselineAttended");
+        JTextField priorConducted = new JTextField(Integer.toString(baseline.total()), 10);
+        priorConducted.setName("attendanceBaselineConducted");
+        JPanel form = transparent(new BorderLayout(0, 10));
+        form.add(ViewStyle.muted("Enter earlier classes. Classes in the dated history are added to these totals."),
+                BorderLayout.PAGE_START);
+        JPanel counts = transparent(new GridLayout(0, 2, 10, 6));
+        JLabel attendedLabel = new JLabel("Classes attended");
+        attendedLabel.setLabelFor(priorAttended);
+        counts.add(attendedLabel);
+        counts.add(priorAttended);
+        JLabel conductedLabel = new JLabel("Classes conducted");
+        conductedLabel.setLabelFor(priorConducted);
+        counts.add(conductedLabel);
+        counts.add(priorConducted);
+        form.add(counts, BorderLayout.CENTER);
+        Baseline changed = FormDialogs.show(this, "Set starting totals", form, priorAttended, "Save totals",
+                () -> !priorAttended.getText().equals(Integer.toString(baseline.attended()))
+                        || !priorConducted.getText().equals(Integer.toString(baseline.total())), () -> {
+                    int attendedCount = readCount(priorAttended, "Classes attended");
+                    int conductedCount = readCount(priorConducted, "Classes conducted");
+                    if (attendedCount > conductedCount) {
+                        priorConducted.requestFocusInWindow();
+                        throw new IllegalArgumentException("Classes conducted must be at least classes attended.");
+                    }
+                    return new Baseline(attendedCount, conductedCount);
+                });
+        if (changed != null && !changed.equals(baseline)) {
+            actions.setBaseline(subject.subjectId(), changed);
+        }
+    }
+
+    private static int readCount(JTextField field, String label) {
+        try {
+            int count = Integer.parseInt(field.getText().strip());
+            if (count >= 0) return count;
+        } catch (NumberFormatException invalid) {
+            // Report the same message for out-of-range values and invalid whole numbers.
+        }
+        field.requestFocusInWindow();
+        throw new IllegalArgumentException(label + " must be a non-negative whole number.");
+    }
+
     private record Correction(LocalDate date, boolean attended) { }
 
     private LocalDate parseDate(String text) {
@@ -330,6 +415,7 @@ public final class AttendancePanel extends JPanel {
         attended.setEnabled(available);
         absent.setEnabled(available);
         target.setEnabled(available);
+        startingTotals.setEnabled(available);
         correct.setEnabled(available && history.getSelectedRow() >= 0);
     }
 

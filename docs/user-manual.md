@@ -43,7 +43,7 @@ The Dashboard shows today's tasks, upcoming deadlines, Smart Priority, and task 
 - **Kanban Board.** The progress chart shows the share of tasks in each status and the number overdue. Cards show priority, type, and deadline. Move a task between **To do**, **In progress**, and **Completed** using the card controls.
 - **Search.** Press **Ctrl+K**. Enter words such as a course name plus a topic. Choose **Open result** or press Enter on a selected result to open the actual record.
 - **Focus.** Choose a preset or custom duration. Press **Ctrl+Space** to start, pause, or resume from Focus. The timer continues while you switch pages. Use **Finish early** to record time spent before closing; unfinished intervals do not restart.
-- **Analytics.** Choose a period or enter inclusive custom dates. The range affects activity trends, focus and attendance. The task inventory always shows current saved tasks, including older completions whose dates are unknown.
+- **Analytics.** Choose a period or enter inclusive custom dates. The range affects activity trends, focus and attendance. Attendance in Analytics counts dated class entries in that range. The task inventory always shows current saved tasks, including older completions whose dates are unknown.
 
 ### Import a timetable
 
@@ -62,9 +62,9 @@ For an alternate profile, put `--data-dir "C:\StudyFlow data"` before `--import-
 ### Track attendance
 
 1. Create the course in **Subjects** if it does not already exist.
-2. Open **Attendance**, select the course and choose the class date.
-3. Select **Add attended** or **Add absent** for each class. Use **Correct selected** to fix an existing entry.
-4. Use **Change target** to set the required percentage for the subject. Check the forecast for additional absences or classes needed to regain the target.
+2. Open **Attendance** and select the course. If you have earlier totals, choose **Set starting totals**, enter **Classes attended** and **Classes conducted**, then choose **Save totals**. Include earlier classes that aren't already in the dated history, so each class is counted once. Conducted includes classes you attended and classes you missed.
+3. Choose a date and select **Add attended** or **Add absent** for each class you log. Dated entries are added to the starting totals. Use **Correct selected** to fix an existing dated entry.
+4. Use **Change target** to set the required percentage for the subject. The Attendance page uses both starting totals and dated entries for its percentage and forecast. To clear the starting totals, save zero in both fields. The dated history stays in place.
 
 An exact 100 percent target cannot be regained after a missed class. Attendance entries remain linked to their subject, so remove or resolve linked records before attempting to delete the subject.
 
@@ -108,6 +108,6 @@ java -jar StudyFlow.jar --backup tasks
 java -jar StudyFlow.jar --restore tasks "data/backups/backup.json"
 ```
 
-Use the `timetable` type with either command to back up or restore imported timetable entries, edits and removals.
+Use the `timetable` type with either command to back up or restore imported timetable entries, edits and removals. Use `attendance-baselines` for starting totals in `attendance/baselines.json` and `attendance` for dated class entries.
 
 Replace the example backup path with a file printed by the backup command or an earlier backup from `data/backups`. Add `--data-dir "C:\StudyFlow data"` before `--backup` or `--restore` for a non-default profile. Restoration checks references before replacing a record file, and preserves the file it replaces. Restart StudyFlow after a successful restore. For a whole-profile copy, close the app and copy the complete profile directory, including managed material files and the PDF index.

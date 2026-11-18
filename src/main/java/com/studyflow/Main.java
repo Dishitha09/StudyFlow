@@ -26,7 +26,7 @@ import javax.swing.SwingUtilities;
 /** Starts the Swing desktop application or runs a local data command. */
 public final class Main {
     private static final String BACKUP_TYPES =
-            "<tasks|subjects|workspaces|notes|settings|attendance|attendance-targets|focus|integrations|timetable>";
+            "<tasks|subjects|workspaces|notes|settings|attendance|attendance-targets|attendance-baselines|focus|integrations|timetable>";
     private Main() {
     }
 

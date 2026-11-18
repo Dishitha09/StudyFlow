@@ -1,6 +1,7 @@
 package com.studyflow.config;
 
 import com.studyflow.interfaces.Storage;
+import com.studyflow.model.AttendanceBaseline;
 import com.studyflow.model.AttendanceEntry;
 import com.studyflow.model.AttendanceTarget;
 import com.studyflow.model.Note;
@@ -10,6 +11,7 @@ import com.studyflow.model.Task;
 import com.studyflow.model.UserSettings;
 import com.studyflow.model.Workspace;
 import com.studyflow.repository.FileStorage;
+import com.studyflow.repository.AttendanceBaselineRepository;
 import com.studyflow.repository.AttendanceRepository;
 import com.studyflow.repository.AttendanceTargetRepository;
 import com.studyflow.repository.FocusRepository;
@@ -82,7 +84,7 @@ public final class StudyFlowContext implements AutoCloseable {
         integrations = new LocalIntegrations(new IntegrationRepository(storage), new GoogleCalendar(), clock);
         timetable = new TimetableService(new TimetableRepository(storage), clock.getZone());
         attendanceService = new AttendanceService(repositories.attendance(),
-                repositories.attendanceTargets(), repositories.subjects()::load,
+                repositories.attendanceTargets(), repositories.attendanceBaselines(), repositories.subjects()::load,
                 () -> settings().getDefaultAttendanceTarget());
         Function<String, Optional<Subject>> subjects = repositories.subjects()::findById;
         taskManager = validate(directory, "tasks/tasks.json",
@@ -99,7 +101,8 @@ public final class StudyFlowContext implements AutoCloseable {
         focusRepository = new FocusRepository(storage);
         focusRepository.load();
         validateAttendanceReferences(directory, repositories.subjects().load(),
-                repositories.attendance().load(), repositories.attendanceTargets().load());
+                repositories.attendance().load(), repositories.attendanceTargets().load(),
+                repositories.attendanceBaselines().load());
     }
 
     public static StudyFlowContext open(Path dataDirectory) throws IOException {
@@ -133,7 +136,8 @@ public final class StudyFlowContext implements AutoCloseable {
             List<Note> notes = repositories.notes().load();
             validateProfile(directory, tasks, subjects, workspaces, notes, settings);
             validateAttendanceReferences(directory, subjects,
-                    repositories.attendance().load(), repositories.attendanceTargets().load());
+                    repositories.attendance().load(), repositories.attendanceTargets().load(),
+                repositories.attendanceBaselines().load());
 
             return switch (type) {
                 case "tasks" -> repositories.tasks().backup();
@@ -143,6 +147,7 @@ public final class StudyFlowContext implements AutoCloseable {
                 case "settings" -> repositories.settings().backup();
                 case "attendance" -> repositories.attendance().backup();
                 case "attendance-targets" -> repositories.attendanceTargets().backup();
+                case "attendance-baselines" -> repositories.attendanceBaselines().backup();
                 case "focus" -> new FocusRepository(storage).backup();
                 case "integrations" -> new IntegrationRepository(storage).backup();
                 case "timetable" -> new TimetableRepository(storage).backup();
@@ -163,7 +168,8 @@ public final class StudyFlowContext implements AutoCloseable {
                     validateProfile(directory, repositories.tasks().load(), subjects, repositories.workspaces().load(),
                             repositories.notes().load(), repositories.settings().load());
                     validateAttendanceReferences(directory, subjects,
-                            repositories.attendance().load(), repositories.attendanceTargets().load());
+                            repositories.attendance().load(), repositories.attendanceTargets().load(),
+                repositories.attendanceBaselines().load());
                     validateSubjectReferences(directory.resolve("materials/materials.json"), subjectIds(subjects),
                             new MaterialRepository(storage).load().stream()
                                     .map(StudyMaterial::subjectId).filter(Objects::nonNull));
@@ -183,6 +189,9 @@ public final class StudyFlowContext implements AutoCloseable {
                 case "attendance-targets" -> repositories.attendanceTargets().restore(backup, targets ->
                         validateSubjectReferences(directory.resolve("attendance/targets.json"),
                                 subjectIds(repositories.subjects().load()), targets.stream().map(AttendanceTarget::subjectId)));
+                case "attendance-baselines" -> repositories.attendanceBaselines().restore(backup, baselines ->
+                        validateSubjectReferences(directory.resolve("attendance/baselines.json"),
+                                subjectIds(repositories.subjects().load()), baselines.stream().map(AttendanceBaseline::subjectId)));
                 case "focus" -> new FocusRepository(storage).restore(backup, records -> { });
                 case "integrations" -> new IntegrationRepository(storage).restore(backup, records -> { });
                 case "timetable" -> new TimetableRepository(storage).restore(backup);
@@ -192,12 +201,15 @@ public final class StudyFlowContext implements AutoCloseable {
     }
 
     private static void validateAttendanceReferences(Path directory, List<Subject> subjects,
-                                                     List<AttendanceEntry> entries, List<AttendanceTarget> targets) {
+                                                     List<AttendanceEntry> entries, List<AttendanceTarget> targets,
+                                                     List<AttendanceBaseline> baselines) {
         Set<String> knownSubjects = subjectIds(subjects);
         validateSubjectReferences(directory.resolve("attendance/classes.json"), knownSubjects,
                 entries.stream().map(AttendanceEntry::subjectId));
         validateSubjectReferences(directory.resolve("attendance/targets.json"), knownSubjects,
                 targets.stream().map(AttendanceTarget::subjectId));
+        validateSubjectReferences(directory.resolve("attendance/baselines.json"), knownSubjects,
+                baselines.stream().map(AttendanceBaseline::subjectId));
     }
 
     private static Set<String> subjectIds(List<Subject> subjects) {
@@ -303,11 +315,12 @@ public final class StudyFlowContext implements AutoCloseable {
     private record ProfileRepositories(TaskRepository tasks, SubjectRepository subjects,
                                        WorkspaceRepository workspaces, NoteRepository notes,
                                        SettingsRepository settings, AttendanceRepository attendance,
-                                       AttendanceTargetRepository attendanceTargets) {
+                                       AttendanceTargetRepository attendanceTargets,
+                                       AttendanceBaselineRepository attendanceBaselines) {
         private ProfileRepositories(FileStorage storage) {
             this(new TaskRepository(storage), new SubjectRepository(storage), new WorkspaceRepository(storage),
                     new NoteRepository(storage), new SettingsRepository(storage), new AttendanceRepository(storage),
-                    new AttendanceTargetRepository(storage));
+                    new AttendanceTargetRepository(storage), new AttendanceBaselineRepository(storage));
         }
     }
 }

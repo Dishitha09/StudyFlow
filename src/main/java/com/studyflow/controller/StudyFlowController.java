@@ -429,6 +429,10 @@ public final class StudyFlowController {
         context.attendanceService().correct(id, date, attended);
     }
 
+    public void setAttendanceBaseline(String subjectId, AttendanceService.Baseline baseline) {
+        context.attendanceService().setBaseline(subjectId, baseline);
+    }
+
     public void setAttendanceTarget(String subjectId, int target) {
         context.attendanceService().setTarget(subjectId, target);
     }
