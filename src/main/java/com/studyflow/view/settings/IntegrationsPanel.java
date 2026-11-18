@@ -145,12 +145,10 @@ public final class IntegrationsPanel extends JPanel {
     public void showGoogleState(boolean connected, Set<String> linkedTasks) {
         googleConnected = connected;
         this.linkedTasks = Set.copyOf(linkedTasks);
-        if (!linksAvailable) {
-            googleStatus.setText("Local link file unavailable. Calendar file export still works.");
-        } else if (googleConnected) {
-            googleStatus.setText("Connected to your primary Google calendar for this StudyFlow session.");
+        if (googleConnected) {
+            googleStatus.setText("Connected. Your primary Google calendar appears in Calendar.");
         } else if (googleConfigured) {
-            googleStatus.setText("Ready to connect. Sign in to Google to sync deadlines.");
+            googleStatus.setText("Sign in to view events from your primary Google calendar.");
         } else {
             googleStatus.setText("Setup required for live sync. You can still export a calendar file.");
         }
@@ -218,8 +216,8 @@ public final class IntegrationsPanel extends JPanel {
         inner.add(heading, BorderLayout.PAGE_START);
 
         JPanel taskArea = transparent(new BorderLayout(0, 5));
-        JLabel hint = ViewStyle.muted("<html>Sync sends selected task titles, dates, descriptions and subjects to Google as "
-                + "all-day events. Google edits don’t update StudyFlow. Use Export .ics without signing in.</html>");
+        JLabel hint = ViewStyle.muted("<html>Google events show in Calendar without becoming tasks. Sync selected sends "
+                + "StudyFlow deadlines to Google as all-day events. You can export .ics without signing in.</html>");
         hint.setLabelFor(tasks);
         JPanel syncOptions = transparent(new BorderLayout(0, 4));
         JPanel autoOptions = actions();
@@ -305,7 +303,7 @@ public final class IntegrationsPanel extends JPanel {
                 + "2. Configure OAuth consent and add your account as a test user if needed.<br>"
                 + "3. Create a <b>Desktop app</b> OAuth client. Set its values in your launch environment:<br>"
                 + "&nbsp;&nbsp;&nbsp; STUDYFLOW_GOOGLE_CLIENT_ID and STUDYFLOW_GOOGLE_CLIENT_SECRET.<br>"
-                + "4. Restart StudyFlow, choose <b>Connect Google</b>, and approve in your browser.<br><br>"
+                + "4. Restart StudyFlow, choose <b>Connect Google</b>, and select the account in your browser.<br><br>"
                 + "Reconnect after restarting the app. No setup needed to export an .ics file.</html>";
         int result = JOptionPane.showOptionDialog(this, steps, "Google Calendar setup", JOptionPane.DEFAULT_OPTION,
                 JOptionPane.INFORMATION_MESSAGE, null, new String[]{"Open Google’s setup guide", "Close"}, "Close");
@@ -455,7 +453,7 @@ public final class IntegrationsPanel extends JPanel {
         Task item = singleTask();
         boolean selectedPlaylist = playlists.getSelectedValue() != null;
         selection.setText(dated ? datedCount + " dated selected" : "No dated tasks selected");
-        connect.setEnabled(!busy && linksAvailable && googleConfigured && !googleConnected);
+        connect.setEnabled(!busy && googleConfigured && !googleConnected);
         cancelConnect.setVisible(googleConnecting);
         cancelConnect.setEnabled(googleConnecting);
         disconnect.setEnabled(!busy && googleConnected);

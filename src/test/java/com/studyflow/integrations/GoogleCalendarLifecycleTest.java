@@ -24,8 +24,11 @@ import java.security.MessageDigest;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
+import java.time.YearMonth;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
@@ -104,6 +107,92 @@ class GoogleCalendarLifecycleTest {
         assertTrue(outcome.get(5, TimeUnit.SECONDS).getMessage().contains("cancelled"));
         assertFalse(calendar.connected());
         assertEquals(0, provider.grants);
+    }
+
+    @Test void listsMonthInPrimaryCalendarTimeZoneAndFiltersOutboundAndCancelledEventsAcrossPages() throws Exception {
+        var provider = new GoogleFixture();
+        provider.eventPages = List.of("""
+                {"nextPageToken":"opaque +/&=ß","items":[
+                  {"id":"all-day","summary":"Conference","start":{"date":"2026-10-31"},
+                    "end":{"date":"2026-11-03"}},
+                  {"id":"cancelled","status":"cancelled"},
+                  {"id":"studyflow","extendedProperties":{"private":{"studyflowTaskId":"task-id"}}},
+                  {"id":"at-midnight","summary":"Ends at midnight","start":{"dateTime":"2026-11-08T04:30:00Z"},
+                    "end":{"dateTime":"2026-11-08T05:00:00Z"}},
+                  {"id":"timed","summary":"Seminar","start":{"dateTime":"2026-11-10T15:00:00Z"},
+                    "end":{"dateTime":"2026-11-10T16:30:00Z"}}
+                ]}
+                """, """
+                {"items":[
+                  {"id":"same-time","summary":"Cross-zone","start":{"dateTime":"2026-11-11T16:00:00",
+                    "timeZone":"Europe/Zurich"},"end":{"dateTime":"2026-11-11T16:30:00",
+                    "timeZone":"Europe/Zurich"}},
+                  {"id":"no-end","endTimeUnspecified":true,"start":{"dateTime":"2026-11-12T15:00:00Z"}},
+                  {"id":"outside","start":{"date":"2026-12-01"},"end":{"date":"2026-12-02"}},
+                  {"id":"all-day","summary":"Duplicate page item","start":{"date":"2026-10-31"},
+                    "end":{"date":"2026-11-03"}}
+                ]}
+                """);
+        GoogleCalendar calendar = connected(new MutableClock(), provider);
+        var events = calendar.listEvents(YearMonth.of(2026, 11));
+
+        assertEquals(List.of("all-day", "at-midnight", "timed", "same-time", "no-end"),
+                events.stream().map(GoogleCalendar.Event::id).toList());
+        assertEquals(new GoogleCalendar.Event("all-day", "Conference", LocalDate.of(2026, 10, 31),
+                LocalDate.of(2026, 11, 3), ""), events.get(0));
+        assertEquals(LocalDate.of(2026, 11, 7), events.get(1).startDate());
+        assertEquals(LocalDate.of(2026, 11, 8), events.get(1).endDateExclusive());
+        assertEquals(new GoogleCalendar.Event("timed", "Seminar", LocalDate.of(2026, 11, 10),
+                LocalDate.of(2026, 11, 11), "10:00 – 11:30"), events.get(2));
+        assertEquals("10:00 – 10:30", events.get(3).timeLabel());
+        assertEquals(new GoogleCalendar.Event("no-end", "Untitled event", LocalDate.of(2026, 11, 12),
+                LocalDate.of(2026, 11, 13), "10:00"), events.get(4));
+
+        assertEquals(2, provider.eventListRequests.size());
+        Map<String, String> first = provider.eventListRequests.getFirst();
+        Map<String, String> second = provider.eventListRequests.getLast();
+        assertEquals("America/New_York", first.get("timeZone"));
+        assertEquals(OffsetDateTime.parse("2026-11-01T00:00:00-04:00"), OffsetDateTime.parse(first.get("timeMin")));
+        assertEquals(OffsetDateTime.parse("2026-12-01T00:00:00-05:00"), OffsetDateTime.parse(first.get("timeMax")));
+        assertEquals("true", first.get("singleEvents"));
+        assertEquals("startTime", first.get("orderBy"));
+        assertEquals("false", first.get("showDeleted"));
+        assertFalse(first.containsKey("pageToken"));
+        var nextParameters = new HashMap<>(first);
+        nextParameters.put("pageToken", "opaque +/&=ß");
+        assertEquals(nextParameters, second);
+        assertEquals(0, provider.created + provider.updated + provider.deleted);
+    }
+
+    @Test void cancelsEventReadingBeforeNetworkAndBetweenPagesWithoutReturningPartialResults() throws Exception {
+        var provider = new GoogleFixture();
+        provider.eventPages = List.of("""
+                {"nextPageToken":"next","items":[{"id":"first","start":{"date":"2026-11-17"},
+                "end":{"date":"2026-11-18"}}]}
+                """);
+        GoogleCalendar calendar = connected(new MutableClock(), provider);
+        YearMonth month = YearMonth.of(2026, 11);
+        int before = provider.calendarRequests;
+        assertTrue(calendar.listEvents(month, () -> true).isEmpty());
+        assertEquals(before, provider.calendarRequests);
+
+        var cancelled = new AtomicBoolean();
+        provider.afterEventList = () -> cancelled.set(true);
+        assertTrue(calendar.listEvents(month, cancelled::get).isEmpty());
+        assertEquals(1, provider.eventListRequests.size());
+    }
+
+    @Test void failsClearlyForRepeatedPageTokensAndAvoidsNetworkAfterDisconnect() throws Exception {
+        var provider = new GoogleFixture();
+        provider.eventPages = List.of("{\"nextPageToken\":\"repeat\"}", "{\"nextPageToken\":\"repeat\"}");
+        GoogleCalendar calendar = connected(new MutableClock(), provider);
+        YearMonth month = YearMonth.of(2026, 11);
+        assertTrue(assertThrows(IOException.class, () -> calendar.listEvents(month)).getMessage().contains("repeated"));
+        assertEquals(2, provider.eventListRequests.size());
+        int before = provider.calendarRequests;
+        calendar.disconnect();
+        assertThrows(IOException.class, () -> calendar.listEvents(month));
+        assertEquals(before, provider.calendarRequests);
     }
 
     @Test void automaticSyncDoesNotSendRequestsWhenOffDisconnectedCancelledOrUndated() throws Exception {
@@ -315,6 +404,7 @@ class GoogleCalendarLifecycleTest {
             var fields = form(url.getRawQuery());
             provider.challenge = fields.get("code_challenge");
             assertEquals("S256", fields.get("code_challenge_method"));
+            assertEquals("select_account consent", fields.get("prompt"));
             String callback = fields.get("redirect_uri");
             assertTrue(callback.startsWith("http://127.0.0.1:"));
             try {
@@ -372,6 +462,9 @@ class GoogleCalendarLifecycleTest {
         private final ObjectMapper mapper = new ObjectMapper();
         private final Map<String, ObjectNode> events = new HashMap<>();
         private final String calendarId;
+        private final List<Map<String, String>> eventListRequests = new ArrayList<>();
+        private List<String> eventPages = List.of();
+        private Runnable afterEventList = () -> { };
         private String challenge;
         private String loseCreateResponseFor;
         private Runnable afterEventRead = () -> { };
@@ -411,7 +504,15 @@ class GoogleCalendarLifecycleTest {
             if (unauthorized) return new GoogleCalendar.Exchange(401, "{}");
             String path = request.uri().getPath();
             if (path.endsWith("/primary")) {
-                return new GoogleCalendar.Exchange(200, mapper.createObjectNode().put("id", calendarId).toString());
+                return new GoogleCalendar.Exchange(200, mapper.createObjectNode().put("id", calendarId)
+                        .put("timeZone", "America/New_York").toString());
+            }
+            if (path.endsWith("/primary/events") && "GET".equals(request.method())) {
+                assertTrue(request.bodyPublisher().isEmpty() || request.bodyPublisher().orElseThrow().contentLength() == 0);
+                int index = eventListRequests.size();
+                eventListRequests.add(form(request.uri().getRawQuery()));
+                afterEventList.run();
+                return new GoogleCalendar.Exchange(200, eventPages.get(index));
             }
             String id = path.substring(path.lastIndexOf('/') + 1);
             return switch (request.method()) {

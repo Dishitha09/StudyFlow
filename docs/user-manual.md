@@ -39,7 +39,7 @@ The Dashboard shows today's tasks, upcoming deadlines, Smart Priority, and task 
 
 - **My Tasks.** Select a task for its details and status or priority controls. Use **Edit** to change fields and **Delete** to remove the task and its subtasks after confirmation. Choose search terms and filters, then select **Apply**. Use **Clear filters** to restore the full listing.
 - **Subtasks and recurrence.** Open the selected task's subtask and recurrence controls. Add smaller steps and complete them independently. Set daily, weekly, or monthly recurrence on a root task with a deadline. Completing it creates the next occurrence.
-- **Calendar.** Navigate by month, filter by subject, and select a date. Choose **Edit task** to change the deadline or assign a different subject. **Edit subject** opens the linked course for editing.
+- **Calendar.** Navigate by month and select a date to see what is scheduled. Filter StudyFlow tasks by subject. Choose **Edit task** to change a deadline or its subject, or **Edit subject** to open the linked course. A connected Google Calendar appears in the same view.
 - **Kanban Board.** The progress chart shows the share of tasks in each status and the number overdue. Cards show priority, type, and deadline. Move a task between **To do**, **In progress**, and **Completed** using the card controls.
 - **Search.** Press **Ctrl+K**. Enter words such as a course name plus a topic. Choose **Open result** or press Enter on a selected result to open the actual record.
 - **Focus.** Choose a preset or custom duration. Press **Ctrl+Space** to start, pause, or resume from Focus. The timer continues while you switch pages. Use **Finish early** to record time spent before closing; unfinished intervals do not restart.
@@ -71,9 +71,13 @@ StudyFlow extracts existing PDF text. Image-only scans may need OCR before uploa
 
 ### Optional connections
 
-**Google Calendar.** From **Calendar**, choose **Google Calendar**. Select dated tasks and choose **Export .ics** for a file you can import without signing in. For live sync, choose **Setup help** and configure a desktop OAuth client before launching StudyFlow. Choose **Connect Google** and authorize in the browser. **Sync selected** sends or updates the selected tasks as all-day events in your primary calendar.
+**Connect Google Calendar.** From **Calendar**, choose **Google Calendar**. Use **Setup help** to configure a desktop OAuth client before launching StudyFlow. Choose **Connect Google**, select the account whose primary calendar you want to see, then authorize in the browser. Reconnect after restarting StudyFlow.
 
-**Auto-sync dated tasks** starts off. To enable it, go to **Settings → Integrations → Google Calendar**, check the box, and confirm. When you enable it or reconnect, StudyFlow syncs existing dated tasks, including completed tasks. While StudyFlow is open and connected, it sends new dated tasks and changes to event details and retries temporary failures. Changes made in Google do not flow back to StudyFlow. Sign in again after restarting. Clear the checkbox to stop automatic sends.
+**View Google events.** StudyFlow fetches the displayed month from your connected primary calendar. Events refresh when you open Calendar or change months, and about once per minute while you stay on the page. Use **Refresh Google** to request an update, or select a date to see the events for that day. Recurring occurrences appear on their scheduled dates. All-day events keep their calendar dates, and timed events use your Google Calendar’s time zone. A linked StudyFlow task represents its synced Google event so it appears once. Google events are read-only in StudyFlow and stay in memory for the session. They do not become tasks or appear on Kanban.
+
+**Send tasks to Google.** Choose **Sync selected** to send or update selected StudyFlow tasks as all-day events in your primary calendar. Choose **Export .ics** to save selected deadlines to a file you can import without signing in.
+
+**Auto-sync dated tasks** starts off. To enable it, go to **Settings → Integrations → Google Calendar**, check the box, and confirm. When you enable it or reconnect, StudyFlow syncs existing dated tasks, including completed tasks. While StudyFlow is open and connected, it sends new dated tasks and changes to event details and retries temporary failures. Clear the checkbox to stop automatic sends. Google edits may appear in the calendar view after refresh, but they do not edit a StudyFlow task.
 
 Clearing a deadline or deleting a local task leaves its Google event in place. To remove the linked event, select the task and choose **Remove event** before clearing its deadline or deleting it. This keeps auto-sync from recreating that event for the task and account. To send the task again, use **Sync selected**.
 

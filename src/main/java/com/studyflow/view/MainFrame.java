@@ -4,6 +4,7 @@ import com.studyflow.config.AppConfig;
 import com.studyflow.controller.StudyFlowController;
 import com.studyflow.controller.StudyFlowController.TaskQuery;
 import com.studyflow.factory.TaskDraft;
+import com.studyflow.integrations.GoogleCalendar;
 import com.studyflow.model.Priority;
 import com.studyflow.model.Subject;
 import com.studyflow.model.TaskStatus;
@@ -35,7 +36,10 @@ import java.awt.event.ComponentAdapter;
 import java.awt.event.ComponentEvent;
 import java.awt.event.InputEvent;
 import java.awt.event.KeyEvent;
+import java.time.YearMonth;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 import javax.swing.AbstractAction;
 import javax.swing.BorderFactory;
 import javax.swing.JButton;
@@ -92,6 +96,12 @@ public final class MainFrame extends JFrame {
     private boolean googleAutoPending;
     private java.util.concurrent.atomic.AtomicBoolean googleAutoRun;
     private long googleAutoFailedAt;
+    private YearMonth googleEventsMonth;
+    private List<GoogleCalendar.Event> googleEvents = List.of();
+    private AtomicBoolean googleReadRun;
+    private YearMonth googleReadMonth;
+    private YearMonth googleDisplayedMonth;
+    private boolean googleReadQueued;
     private java.time.LocalDate displayedDate;
     private Page activePage;
     private long analyticsRequest;
@@ -129,7 +139,7 @@ public final class MainFrame extends JFrame {
                 () -> controller.changeNotifications(enabled), "Reminder preference saved.", null), integrations);
         settings.showTheme(theme);
         calendar = new CalendarPanel(this::openTask, tasks::openEdit, this::openSubjectEditor,
-                this::openCalendarIntegrations);
+                this::openCalendarIntegrations, this::requestGoogleEvents, this::refreshGoogleEvents);
         kanban = new KanbanPanel((id, status) -> change(() -> controller.changeStatus(id, status),
                 "Task moved.", null), this::openTask);
         focus = new FocusPanel(session -> change(() -> controller.recordFocus(session.id(), session.taskId(),
@@ -292,6 +302,7 @@ public final class MainFrame extends JFrame {
         reminderTimer = new javax.swing.Timer(60_000, event -> {
             refreshDay();
             scheduleGoogleAutoSync();
+            if (activePage == Page.CALENDAR) refreshGoogleEvents();
         });
         setBusy(true);
         controller.load(taskQuery, records -> {
@@ -375,6 +386,7 @@ public final class MainFrame extends JFrame {
             SwingUtilities.invokeLater(search::focusQuery);
         }
         if (page == Page.ANALYTICS) refreshAnalytics(analytics.range());
+        if (page == Page.CALENDAR) refreshGoogleEvents();
     }
 
     private void dashboardAction(DashboardPanel.Action action) {
@@ -429,7 +441,7 @@ public final class MainFrame extends JFrame {
         materials.showData(records.materials(), taskSubjects, records.materialsWarning());
         materials.setRemoteAvailable(records.remoteAi());
         googleAutoEnabled = records.settings().isGoogleAutoSyncEnabled();
-        googleConnected = records.googleConnected();
+        updateGoogleConnection(records.googleConnected());
         googleLinksAvailable = records.integrationsWarning() == null;
         integrations.showData(records.allTasks(), taskSubjects, records.googleConfigured(), googleConnected,
                 records.linkedCalendarTasks(), records.remoteAi(), records.playlists(), records.integrationsWarning(),
@@ -501,11 +513,13 @@ public final class MainFrame extends JFrame {
             if (closing) return;
             controller.load(taskQuery, records -> {
                 if (closing) return;
+                boolean justConnected = !googleConnected && records.googleConnected();
                 googleAutoFailedAt = 0;
                 integrations.setAutoSyncFeedback(null);
                 showRecords(records);
                 setBusy(false);
                 showFeedback(success, false);
+                if (justConnected) navigate(Page.CALENDAR);
             }, this::handleGoogleFailure);
         }, message -> {
             if (closing) return;
@@ -516,6 +530,91 @@ public final class MainFrame extends JFrame {
                 handleGoogleFailure(message);
             }, ignored -> handleGoogleFailure(message));
         });
+    }
+
+    private void refreshGoogleEvents() {
+        requestGoogleEvents(calendar.displayedMonth());
+    }
+
+    private void requestGoogleEvents(YearMonth month) {
+        if (closing || activePage != Page.CALENDAR) return;
+        if (!googleConnected) {
+            calendar.showGoogleEvents(List.of(), "Connect Google to see events here.");
+            return;
+        }
+        boolean cached = month.equals(googleEventsMonth);
+        if (!month.equals(googleDisplayedMonth) || !cached) {
+            calendar.showGoogleEvents(cached ? googleEvents : List.of(), "Loading Google Calendar…");
+            googleDisplayedMonth = month;
+        }
+        if (googleReadRun != null) {
+            if (!month.equals(googleReadMonth) || googleReadRun.get()) {
+                googleReadRun.set(true);
+                googleReadQueued = true;
+            }
+            return;
+        }
+
+        var cancelled = new AtomicBoolean();
+        googleReadRun = cancelled;
+        googleReadMonth = month;
+        controller.readGoogleEvents(month, cancelled::get, result -> {
+            if (canShowGoogleEvents(month, cancelled)) {
+                if (!result.connected()) {
+                    updateGoogleConnection(false);
+                    calendar.updateLinkedTasks(Set.of());
+                    integrations.showGoogleState(false, Set.of());
+                } else if (result.error() != null) {
+                    showGoogleReadError(month);
+                } else {
+                    googleEventsMonth = month;
+                    googleEvents = result.events();
+                    calendar.showGoogleEvents(googleEvents, googleEvents.isEmpty()
+                            ? "No Google events this month." : "Google Calendar up to date.");
+                }
+            }
+            finishGoogleRead();
+        }, message -> {
+            if (canShowGoogleEvents(month, cancelled)) showGoogleReadError(month);
+            finishGoogleRead();
+        });
+    }
+
+    private boolean canShowGoogleEvents(YearMonth month, AtomicBoolean cancelled) {
+        return !closing && !cancelled.get() && googleConnected && month.equals(calendar.displayedMonth());
+    }
+
+    private void showGoogleReadError(YearMonth month) {
+        calendar.showGoogleEvents(month.equals(googleEventsMonth) ? googleEvents : List.of(),
+                "Could not refresh Google Calendar. Will retry.");
+    }
+
+    private void finishGoogleRead() {
+        googleReadRun = null;
+        googleReadMonth = null;
+        if (googleReadQueued) {
+            googleReadQueued = false;
+            refreshGoogleEvents();
+        }
+    }
+
+    private void updateGoogleConnection(boolean connected) {
+        if (googleConnected == connected) return;
+        googleConnected = connected;
+        if (connected) {
+            refreshGoogleEvents();
+        } else {
+            clearGoogleEvents();
+        }
+    }
+
+    private void clearGoogleEvents() {
+        if (googleReadRun != null) googleReadRun.set(true);
+        googleReadQueued = false;
+        googleEventsMonth = null;
+        googleDisplayedMonth = null;
+        googleEvents = List.of();
+        calendar.showGoogleEvents(List.of(), "Connect Google to see events here.");
     }
 
     private void scheduleGoogleAutoSync() {
@@ -536,7 +635,7 @@ public final class MainFrame extends JFrame {
         googleAutoRun = cancelled;
         controller.autoSyncGoogle(cancelled::get, state -> {
             if (!closing && !cancelled.get() && state != null) {
-                googleConnected = state.connected();
+                updateGoogleConnection(state.connected());
                 calendar.updateLinkedTasks(state.linkedTasks());
                 integrations.showGoogleState(state.connected(), state.linkedTasks());
                 if (state.error() != null) {
@@ -623,6 +722,7 @@ public final class MainFrame extends JFrame {
         closing = true;
         reminderTimer.stop();
         stopGoogleAutoSync();
+        clearGoogleEvents();
         if (cancelPdfImport != null) cancelPdfImport.set(true);
         controller.cancelGoogleConnection();
         focus.stop();
@@ -774,6 +874,8 @@ public final class MainFrame extends JFrame {
             }
         }
         @Override public void disconnect() {
+            if (busy || closing) return;
+            clearGoogleEvents();
             changeGoogle(controller::disconnectGoogle, "Google Calendar disconnected.");
         }
         @Override public void setAutoSync(boolean enabled) {

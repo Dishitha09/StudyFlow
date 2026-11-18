@@ -3,6 +3,7 @@ package com.studyflow.controller;
 import com.studyflow.config.StudyFlowContext;
 import com.studyflow.config.AppLog;
 import com.studyflow.factory.TaskDraft;
+import com.studyflow.integrations.GoogleCalendar;
 import com.studyflow.model.Assignment;
 import com.studyflow.model.Exam;
 import com.studyflow.model.FocusRecord;
@@ -35,6 +36,7 @@ import com.studyflow.utils.ValidationUtils;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDate;
+import java.time.YearMonth;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Path;
@@ -227,6 +229,24 @@ public final class StudyFlowController {
                     context.integrations().linkedCalendarTasks(), result.count(), result.error()), success, failure);
         }, failure);
     }
+
+    public void readGoogleEvents(YearMonth month, BooleanSupplier cancelled, Consumer<GoogleEvents> success,
+                                 Consumer<String> failure) {
+        submit(calendarWorker, () -> {
+            GoogleCalendar google = context.integrations().google();
+            if (cancelled.getAsBoolean() || !google.connected()) {
+                return new GoogleEvents(List.of(), google.connected(), null);
+            }
+            try {
+                return new GoogleEvents(google.listEvents(month, cancelled), google.connected(), null);
+            } catch (IOException error) {
+                AppLog.failure("desktop.google.events.failed", error);
+                return new GoogleEvents(List.of(), google.connected(), error.getMessage());
+            }
+        }, success, failure);
+    }
+
+    public record GoogleEvents(List<GoogleCalendar.Event> events, boolean connected, String error) { }
 
     private record GoogleSyncOutcome(int count, String error) { }
 

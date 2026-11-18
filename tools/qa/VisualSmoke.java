@@ -2,6 +2,7 @@ import com.studyflow.config.AppConfig;
 import com.studyflow.config.StudyFlowContext;
 import com.studyflow.controller.StudyFlowController;
 import com.studyflow.factory.TaskDraft;
+import com.studyflow.integrations.GoogleCalendar;
 import com.studyflow.model.FocusRecord;
 import com.studyflow.model.Priority;
 import com.studyflow.model.TaskStatus;
@@ -9,6 +10,7 @@ import com.studyflow.model.Theme;
 import com.studyflow.view.MainFrame;
 import com.studyflow.view.ViewStyle;
 import com.studyflow.view.navigation.SidebarPanel;
+import com.studyflow.view.planning.CalendarPanel;
 import java.awt.Component;
 import java.awt.Container;
 import java.awt.Dimension;
@@ -53,7 +55,7 @@ class VisualSmoke {
 
     public static void main(String[] args) throws Exception {
         if (args.length < 1 || args.length > 2 || GraphicsEnvironment.isHeadless()) {
-            throw new IllegalArgumentException("Use a desktop: VisualSmoke <folder> [dashboard|analytics|workflow|integrations|dpi|all]");
+            throw new IllegalArgumentException("Use a desktop: VisualSmoke <folder> [dashboard|analytics|workflow|integrations|calendar-google|dpi|all]");
         }
         Path output = Path.of(args[0]).toAbsolutePath();
         Files.createDirectories(output);
@@ -64,6 +66,7 @@ class VisualSmoke {
             case "analytics" -> List.of("navAnalytics");
             case "workflow" -> List.of("navAttendance", "navFocus");
             case "integrations" -> List.of("navSettings");
+            case "calendar-google" -> List.of("navCalendar");
             case "dpi" -> List.of("navDashboard", "navAnalytics");
             default -> VISUAL_SAMPLE;
         };
@@ -110,6 +113,20 @@ class VisualSmoke {
                                 if (panel == null) throw new AssertionError("Integration controls are missing");
                                 ((JTabbedPane) SwingUtilities.getAncestorOfClass(JTabbedPane.class, panel))
                                         .setSelectedComponent(panel);
+                            }
+                            if (mode.equals("calendar-google")) {
+                                var calendar = (CalendarPanel) find(frame, "calendarPanel");
+                                LocalDate today = LocalDate.now(clock);
+                                calendar.showGoogleEvents(List.of(
+                                        new GoogleCalendar.Event("fixture-class", "Data Structures lecture", today,
+                                                today.plusDays(1), "8:45 AM – 9:35 AM"),
+                                        new GoogleCalendar.Event("fixture-seminar", "Research methods seminar",
+                                                today.plusDays(2), today.plusDays(4), "")),
+                                        "Google Calendar up to date.");
+                                if (!(find(calendar, "calendarGoogleEvent-fixture-class") instanceof JLabel label)
+                                        || !"Data Structures lecture".equals(label.getText())) {
+                                    throw new AssertionError("Expected a read-only Google event in the selected day.");
+                                }
                             }
                             frame.getContentPane().setPreferredSize(new Dimension(size[0], size[1]));
                             frame.pack();

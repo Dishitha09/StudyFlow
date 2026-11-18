@@ -1,6 +1,6 @@
 # StudyFlow
 
-StudyFlow 0.2.1 is an offline-first Java desktop workspace for coursework, focus, attendance, and study PDFs.
+StudyFlow 0.2.2 is an offline-first Java desktop workspace for coursework, focus, attendance, and study PDFs.
 
 ![The StudyFlow dashboard running with sample academic data](docs/screenshots/completion/dashboard-light-1366x768.png)
 
@@ -70,7 +70,8 @@ StudyFlow opens to the Dashboard. It shows live task totals, today's deadlines, 
 
 ## Optional integrations
 
-- **Google Calendar** is available from **Calendar → Google Calendar** or **Settings → Integrations**. Export selected deadlines as an `.ics` file without signing in. For live sync, enable the Google Calendar API in a Google Cloud project, create a Desktop app OAuth client, and set `STUDYFLOW_GOOGLE_CLIENT_ID` and `STUDYFLOW_GOOGLE_CLIENT_SECRET` in the launch environment. Choose **Connect Google**, authorize in the browser, then use **Sync selected** for manual one-way sync to your primary calendar. Reconnect after restarting StudyFlow. [Google Desktop OAuth setup](https://developers.google.com/identity/protocols/oauth2/native-app)
+- **Google Calendar** is available from **Calendar → Google Calendar** or **Settings → Integrations**. Enable the Google Calendar API in a Google Cloud project, create a Desktop app OAuth client, and set `STUDYFLOW_GOOGLE_CLIENT_ID` and `STUDYFLOW_GOOGLE_CLIENT_SECRET` in the launch environment. Choose **Connect Google**, select the Google account whose primary calendar you want to see, and authorize in the browser. Reconnect after restarting StudyFlow. [Google Desktop OAuth setup](https://developers.google.com/identity/protocols/oauth2/native-app)
+- **View Google events.** The connected account’s primary calendar appears automatically alongside StudyFlow deadlines for the displayed month. It refreshes when you open Calendar, change months, or stay on the page for about a minute. Choose **Refresh Google** for an on-demand update. Google events are read-only and stay in memory for the session. They do not become StudyFlow tasks or Kanban cards. Use **Sync selected** to send chosen StudyFlow tasks to Google, or export selected deadlines to an `.ics` file without signing in.
 - **Auto-sync dated tasks** is off by default. In **Settings → Integrations → Google Calendar**, check the box and confirm to enable it. StudyFlow sends existing dated tasks on enable or reconnect, including completed tasks, and keeps their linked events up to date while the app is open and connected. It retries temporary failures. Clearing a local deadline or deleting a task leaves its Google event in place. **Remove event** deletes the linked Google event and keeps auto-sync from recreating it for that task and account until you use **Sync selected** for the task again. [Google Calendar instructions](docs/user-manual.md#optional-connections)
 - **Spotify** stores a saved `https://open.spotify.com` link and opens it using your system browser. Playback belongs to Spotify.
 - **OpenAI** uses `OPENAI_API_KEY` and optionally `STUDYFLOW_OPENAI_MODEL`. Settings can test model access without sending document content. A remote study request sends selected passages only after confirmation. Local study modes work without credentials. [OpenAI Responses API](https://developers.openai.com/api/reference/resources/responses/methods/create)

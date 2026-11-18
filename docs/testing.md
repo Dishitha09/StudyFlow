@@ -1,5 +1,9 @@
 # StudyFlow verification
 
+## Release 0.2.2
+
+Maven verification passed **195 tests**. Mock Google requests checked month and time-zone boundaries, paginated and recurring events, cancellation, and filtering cancelled or linked outbound events. A Swing probe checked day and month transitions, exclusive all-day end dates, task subject filters, and Google refresh. [The Calendar screenshot](screenshots/calendar-inbound/calendar-dark-1440x900.png) uses synthetic events and tasks and shows both sources on the selected date.
+
 ## Release 0.2.1
 
 Maven verification passed **192 tests**. Mock Google responses covered dated task creation and edits, reconnect catch-up, retry without duplicates, cancellation, manual removal, and loading profiles from before auto-sync. A Swing probe checked confirmation, persistence across reopen, the paused state while signed out, and turning sync off. No real Google account was used.

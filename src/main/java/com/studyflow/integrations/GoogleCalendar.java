@@ -22,11 +22,23 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.time.Clock;
+import java.time.DateTimeException;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.OffsetDateTime;
+import java.time.YearMonth;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.Base64;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.HexFormat;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
@@ -43,6 +55,11 @@ public final class GoogleCalendar {
     private static final URI TOKENS = URI.create("https://oauth2.googleapis.com/token");
     private static final String CALLBACK = "/oauth";
     private static final String RECONNECT = "Google authorization expired or was revoked. Connect Google Calendar again.";
+    private static final String EVENT_LIST_FIELDS =
+            "nextPageToken,items(id,status,summary,start,end,endTimeUnspecified,extendedProperties/private)";
+    private static final DateTimeFormatter OFFSET_TIMESTAMP = DateTimeFormatter.ISO_OFFSET_DATE_TIME;
+    private static final DateTimeFormatter EVENT_TIME = DateTimeFormatter.ofPattern("HH:mm");
+    private static final DateTimeFormatter EVENT_DATE_TIME = DateTimeFormatter.ofPattern("MMM d, HH:mm");
     private final String clientId;
     private final String clientSecret;
     private final Clock clock;
@@ -95,7 +112,7 @@ public final class GoogleCalendar {
                     "code", grant.value(), "redirect_uri", grant.redirect(), "code_verifier", verifier,
                     "grant_type", "authorization_code"), null);
             attempt.requireActive();
-            String identity = calendarIdentity(sendEvent(tokens, "GET", "", null));
+            String identity = calendarInfo(sendEvent(tokens, "GET", "", null)).identity();
             attempt.publish(session, new Session(tokens, identity));
         } finally {
             pending.compareAndSet(attempt, null);
@@ -127,7 +144,7 @@ public final class GoogleCalendar {
                     "https://www.googleapis.com/auth/calendar.events.owned "
                             + "https://www.googleapis.com/auth/calendar.calendars.readonly",
                     "code_challenge", challenge, "code_challenge_method", "S256", "access_type", "offline",
-                    "prompt", "consent");
+                    "prompt", "select_account consent");
             browser.open(URI.create("https://accounts.google.com/o/oauth2/v2/auth?" + form(arguments)));
             return new AuthorizationCode(attempt.response.get(90, TimeUnit.SECONDS), redirect);
         } catch (InterruptedException error) {
@@ -172,21 +189,140 @@ public final class GoogleCalendar {
     }
 
     public String calendarId() throws IOException {
-        String identity = calendarIdentity(eventRequest("GET", "", null));
-        if (!identity.equals(connectedCalendarId())) {
-            throw new IOException("Google Calendar changed. Disconnect and reconnect the intended account.");
-        }
-        return identity;
+        return currentCalendar().identity();
     }
 
-    private String calendarIdentity(Exchange response) throws IOException {
+    private CalendarInfo currentCalendar() throws IOException {
+        CalendarInfo calendar = calendarInfo(eventRequest("GET", "?fields=id,timeZone", null));
+        if (!calendar.identity().equals(connectedCalendarId())) {
+            throw new IOException("Google Calendar changed. Disconnect and reconnect the intended account.");
+        }
+        return calendar;
+    }
+
+    private CalendarInfo calendarInfo(Exchange response) throws IOException {
         requireSuccess(response);
-        JsonNode identity = readObject(response.body(), "Google returned unreadable primary calendar details.").path("id");
+        JsonNode details = readObject(response.body(), "Google returned unreadable primary calendar details.");
+        JsonNode identity = details.path("id");
         if (!identity.isTextual() || identity.asText().isBlank()) {
             throw new IOException("Google returned no primary calendar ID.");
         }
-        return HexFormat.of().formatHex(hash(identity.asText()));
+        return new CalendarInfo(HexFormat.of().formatHex(hash(identity.asText())), details.path("timeZone").asText(""));
     }
+
+    /** Fetches read-only events overlapping the given month in the primary calendar's own time zone. */
+    public List<Event> listEvents(YearMonth month) throws IOException {
+        return listEvents(month, () -> false);
+    }
+
+    public List<Event> listEvents(YearMonth month, BooleanSupplier cancelled) throws IOException {
+        Objects.requireNonNull(month, "month");
+        Objects.requireNonNull(cancelled, "cancelled");
+        if (cancelled.getAsBoolean()) return List.of();
+        if (month.getYear() < 1 || month.compareTo(YearMonth.of(9999, 12)) >= 0) {
+            throw new IllegalArgumentException("Choose a Google Calendar month with four-digit start and end years.");
+        }
+        CalendarInfo calendar = currentCalendar();
+        ZoneId zone;
+        try {
+            zone = ZoneId.of(calendar.timeZone());
+        } catch (DateTimeException invalid) {
+            throw new IOException("Google returned an invalid primary calendar time zone.");
+        }
+        LocalDate from = month.atDay(1);
+        LocalDate through = month.plusMonths(1).atDay(1);
+        Map<String, String> parameters = new HashMap<>(Map.of(
+                "timeMin", OFFSET_TIMESTAMP.format(from.atStartOfDay(zone)),
+                "timeMax", OFFSET_TIMESTAMP.format(through.atStartOfDay(zone)),
+                "timeZone", zone.getId(), "singleEvents", "true", "orderBy", "startTime",
+                "showDeleted", "false", "maxResults", "250", "fields", EVENT_LIST_FIELDS));
+        var events = new LinkedHashMap<String, Event>();
+        var fetchedTokens = new HashSet<String>();
+        String next;
+        do {
+            if (cancelled.getAsBoolean()) return List.of();
+            if (!calendar.identity().equals(connectedCalendarId())) {
+                throw new IOException("The Google Calendar session changed. Refresh the month again.");
+            }
+            Exchange response = eventRequest("GET", "/events?" + form(parameters), null);
+            if (cancelled.getAsBoolean()) return List.of();
+            requireSuccess(response);
+            JsonNode page = readObject(response.body(), "Google returned an unreadable calendar event list.");
+            JsonNode items = page.path("items");
+            if (!items.isMissingNode() && !items.isArray()) {
+                throw new IOException("Google returned an unreadable calendar event list.");
+            }
+            for (JsonNode item : items) {
+                if ("cancelled".equals(item.path("status").asText())
+                        || !item.path("extendedProperties").path("private").path("studyflowTaskId").asText("").isBlank()) {
+                    continue;
+                }
+                Event event = parseEvent(item, zone);
+                if (event.startDate().isBefore(through) && event.endDateExclusive().isAfter(from)) {
+                    events.putIfAbsent(event.id(), event);
+                }
+            }
+            next = page.path("nextPageToken").asText("");
+            if (!next.isBlank()) {
+                if (!fetchedTokens.add(next)) {
+                    throw new IOException("Google repeated a calendar event page. Try refreshing the month.");
+                }
+                parameters.put("pageToken", next);
+            }
+        } while (!next.isBlank());
+        return cancelled.getAsBoolean() ? List.of() : List.copyOf(events.values());
+    }
+
+    private static Event parseEvent(JsonNode item, ZoneId zone) throws IOException {
+        String id = item.path("id").asText("");
+        if (!item.path("id").isTextual() || id.isBlank()) {
+            throw new IOException("Google returned a calendar event without an ID.");
+        }
+        String title = item.path("summary").asText("").strip();
+        if (title.isEmpty()) title = "Untitled event";
+        JsonNode start = item.path("start");
+        JsonNode end = item.path("end");
+        try {
+            if (start.path("date").isTextual()) {
+                LocalDate first = LocalDate.parse(start.path("date").asText());
+                LocalDate after = LocalDate.parse(end.path("date").asText());
+                if (!after.isAfter(first)) throw new DateTimeException("Nonpositive all-day date range");
+                return new Event(id, title, first, after, "");
+            }
+
+            ZonedDateTime first = eventTime(start, zone);
+            LocalDate day = first.toLocalDate();
+            if (item.path("endTimeUnspecified").asBoolean(false)) {
+                return new Event(id, title, day, day.plusDays(1), EVENT_TIME.format(first));
+            }
+            ZonedDateTime last = eventTime(end, zone);
+            if (last.isBefore(first)) throw new DateTimeException("End precedes start");
+            if (last.isEqual(first)) {
+                return new Event(id, title, day, day.plusDays(1), EVENT_TIME.format(first));
+            }
+            LocalDate lastDay = last.toLocalDate();
+            LocalDate after = last.toLocalTime().equals(LocalTime.MIDNIGHT) ? lastDay : lastDay.plusDays(1);
+            DateTimeFormatter label = day.equals(lastDay) ? EVENT_TIME : EVENT_DATE_TIME;
+            return new Event(id, title, day, after, label.format(first) + " – " + label.format(last));
+        } catch (DateTimeException invalid) {
+            throw new IOException("Google returned a calendar event with invalid dates or times.");
+        }
+    }
+
+    private static ZonedDateTime eventTime(JsonNode data, ZoneId calendarZone) {
+        String value = data.path("dateTime").asText();
+        try {
+            return OffsetDateTime.parse(value).atZoneSameInstant(calendarZone);
+        } catch (DateTimeException offsetMissingOrInvalid) {
+            JsonNode zone = data.path("timeZone");
+            if (!zone.isTextual()) throw offsetMissingOrInvalid;
+            return LocalDateTime.parse(value).atZone(ZoneId.of(zone.asText())).withZoneSameInstant(calendarZone);
+        }
+    }
+
+    public record Event(String id, String title, LocalDate startDate, LocalDate endDateExclusive, String timeLabel) { }
+
+    private record CalendarInfo(String identity, String timeZone) { }
 
     public String upsert(Task task, Subject subject) throws IOException {
         return upsert(task, subject, () -> false);
