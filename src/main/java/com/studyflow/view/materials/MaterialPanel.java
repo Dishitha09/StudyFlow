@@ -16,18 +16,23 @@ import java.awt.BorderLayout;
 import java.awt.CardLayout;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
+import java.io.File;
 import java.nio.file.Path;
 import java.text.ParseException;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.format.FormatStyle;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 import javax.swing.BorderFactory;
 import javax.swing.BoxLayout;
+import javax.swing.DefaultComboBoxModel;
 import javax.swing.DefaultListCellRenderer;
 import javax.swing.DefaultListModel;
 import javax.swing.JButton;
@@ -46,9 +51,9 @@ import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import javax.swing.ListSelectionModel;
 import javax.swing.SpinnerNumberModel;
-import javax.swing.filechooser.FileNameExtensionFilter;
+import javax.swing.filechooser.FileFilter;
 
-/** Presents the local PDF library and the study assistant, with separate answers and source passages. */
+/** Presents the study materials library and supports PDF text search and study tools. */
 public final class MaterialPanel extends JPanel {
     public interface Actions {
         void upload(Path source, String title, String description, String subjectId);
@@ -71,10 +76,11 @@ public final class MaterialPanel extends JPanel {
     private final JTabbedPane tabs = new JTabbedPane();
     private final JTextField query = new JTextField();
     private final JButton search = ViewStyle.primary(new JButton("Search"));
-    private final JButton upload = new JButton("Upload PDF");
+    private final JButton upload = new JButton("Upload file");
     private final JButton open = new JButton("Open PDF");
     private final JButton delete = new JButton("Delete");
     private final JButton studySelected = new JButton("Study this PDF");
+    private final JComboBox<Scope> librarySubject = new JComboBox<>();
     private final DefaultListModel<StudyMaterial> materialRows = new DefaultListModel<>();
     private final JList<StudyMaterial> library = new JList<>(materialRows);
     private final JLabel libraryStatus = ViewStyle.muted("");
@@ -111,6 +117,8 @@ public final class MaterialPanel extends JPanel {
     private Runnable cancelAction;
     private boolean importCancelled;
     private List<StudyMaterial> materials = List.of();
+    private Set<String> pdfIds = Set.of();
+    private Set<String> searchablePdfIds = Set.of();
     private List<Subject> subjects = List.of();
     private Map<String, String> subjectNames = Map.of();
     private List<String> matchingIds;
@@ -156,15 +164,48 @@ public final class MaterialPanel extends JPanel {
         }
         this.materials = List.copyOf(materials);
         this.subjects = List.copyOf(subjects);
+        pdfIds = materials.stream().filter(StudyMaterial::isPdf).map(StudyMaterial::id).collect(Collectors.toSet());
+        searchablePdfIds = materials.stream().filter(StudyMaterial::hasPageSearch).map(StudyMaterial::id)
+                .collect(Collectors.toSet());
         subjectNames = subjects.stream().collect(Collectors.toMap(Subject::getId, Subject::getName));
         String selected = selectedId();
         Scope previousScope = (Scope) scope.getSelectedItem();
         scope.removeAllItems();
         scope.addItem(new Scope(null, "All PDFs"));
         for (StudyMaterial material : materials) {
-            scope.addItem(new Scope(material.id(), material.title()));
+            if (searchablePdfIds.contains(material.id())) {
+                scope.addItem(new Scope(material.id(), material.title()));
+            }
         }
         selectScope(previousScope == null ? null : previousScope.id());
+        updateLibrarySubjects();
+        refreshMatches(selected);
+        passageSearch.updateLibrary(searchablePdfIds);
+        history.setMaterialIds(pdfIds);
+        if (java.util.Collections.list(sourceRows.elements()).stream()
+                .anyMatch(source -> !searchablePdfIds.contains(source.materialId()))) {
+            clearAnswer();
+        }
+    }
+
+    private void updateLibrarySubjects() {
+        Scope selected = (Scope) librarySubject.getSelectedItem();
+        var options = new DefaultComboBoxModel<Scope>();
+        options.addElement(new Scope(null, "All subjects"));
+        options.addElement(new Scope("", "No subject"));
+        subjects.stream().sorted(Comparator.comparing(Subject::getName, String.CASE_INSENSITIVE_ORDER))
+                .map(subject -> new Scope(subject.getId(), subject.getName() + " (" + subject.getSubjectCode() + ")"))
+                .forEach(options::addElement);
+        for (int index = 0; selected != null && index < options.getSize(); index++) {
+            if (Objects.equals(options.getElementAt(index).id(), selected.id())) {
+                options.setSelectedItem(options.getElementAt(index));
+                break;
+            }
+        }
+        librarySubject.setModel(options);
+    }
+
+    private void refreshMatches(String selected) {
         if (matchingIds == null) {
             showMatches(materials, selected);
         } else {
@@ -179,13 +220,6 @@ public final class MaterialPanel extends JPanel {
             }
             showMatches(filtered, selected);
         }
-        var currentIds = materials.stream().map(StudyMaterial::id).collect(Collectors.toSet());
-        passageSearch.updateLibrary(currentIds);
-        history.setMaterialIds(currentIds);
-        if (java.util.Collections.list(sourceRows.elements()).stream()
-                .anyMatch(source -> !currentIds.contains(source.materialId()))) {
-            clearAnswer();
-        }
     }
 
     public void showMatches(List<StudyMaterial> matches) {
@@ -195,8 +229,15 @@ public final class MaterialPanel extends JPanel {
 
     public void showPdfSearch(String text, List<StudyMaterial> matches, RetrievalResult evidence) {
         showMatches(matches);
-        passageSearch.showSearch(text, evidence);
-        if (!text.isBlank()) tabs.setSelectedIndex(PASSAGES_TAB);
+        var pdfEvidence = new RetrievalResult(evidence.passages().stream()
+                .filter(passage -> searchablePdfIds.contains(passage.materialId())).toList(), evidence.warnings().stream()
+                .filter(warning -> pdfIds.contains(warning.materialId())).toList());
+        passageSearch.showSearch(text, pdfEvidence);
+        boolean matchingAttachment = matches.stream().anyMatch(material -> !material.isPdf() && matchesSubject(material));
+        if (!text.isBlank() && !matchingAttachment && (!pdfEvidence.passages().isEmpty()
+                || (materialRows.isEmpty() && !pdfEvidence.warnings().isEmpty()))) {
+            tabs.setSelectedIndex(PASSAGES_TAB);
+        }
     }
 
     public void beginImport(Runnable cancel) {
@@ -212,9 +253,9 @@ public final class MaterialPanel extends JPanel {
         importProgress.setMaximum(Math.max(1, value.total()));
         importProgress.setValue(value.completed());
         importProgress.setString(switch (value.stage()) {
-            case COPYING -> "Copying PDF…";
+            case COPYING -> "Copying file…";
             case EXTRACTING -> "Extracting " + value.completed() + " of " + value.total() + " pages";
-            case SAVING -> "Saving verified PDF and index…";
+            case SAVING -> "Saving material…";
         });
         cancelImport.setEnabled(value.stage() != ImportStage.SAVING);
     }
@@ -227,14 +268,15 @@ public final class MaterialPanel extends JPanel {
 
     private void showMatches(List<StudyMaterial> matches, String selected) {
         materialRows.clear();
-        materialRows.addAll(matches);
+        materialRows.addAll(matches.stream().filter(this::matchesSubject).toList());
         selectRow(selected);
         if (library.isSelectionEmpty() && !materialRows.isEmpty()) {
             library.setSelectedIndex(0);
         }
         libraryStatus.setText(storageWarning != null ? "Library unavailable. The local file was kept for recovery."
-                : matches.isEmpty() ? (query.getText().isBlank() ? "No PDFs in your library."
-                : "No matching PDFs.") : matches.size() + (matches.size() == 1 ? " PDF" : " PDFs"));
+                : materialRows.isEmpty() ? (query.getText().isBlank() && librarySubject.getSelectedIndex() <= 0
+                ? "No study materials in your library." : "No matching materials.")
+                : materialRows.size() + (materialRows.size() == 1 ? " file" : " files"));
         libraryStatus.setToolTipText(storageWarning);
         updateSelection();
     }
@@ -243,8 +285,16 @@ public final class MaterialPanel extends JPanel {
         tabs.setSelectedIndex(0);
         matchingIds = null;
         query.setText("");
+        librarySubject.setSelectedIndex(0);
         showMatches(materials, id);
         library.requestFocusInWindow();
+    }
+
+    private boolean matchesSubject(StudyMaterial material) {
+        Scope selected = (Scope) librarySubject.getSelectedItem();
+        if (selected == null || selected.id() == null) return true;
+        String subjectId = selected.id().isEmpty() ? null : selected.id();
+        return Objects.equals(subjectId, material.subjectId());
     }
 
     public void showAnswer(StudyAssistant.Answer answer) {
@@ -323,7 +373,7 @@ public final class MaterialPanel extends JPanel {
         JPanel controls = transparent(new BorderLayout(6, 0));
         query.setName("materialSearchQuery");
         query.getAccessibleContext().setAccessibleName("Search study materials");
-        query.putClientProperty("JTextField.placeholderText", "Search PDF titles or text passages");
+        query.putClientProperty("JTextField.placeholderText", "Search files or PDF text");
         query.addActionListener(event -> searchLibrary());
         controls.add(query, BorderLayout.CENTER);
         JPanel commands = transparent(new FlowLayout(FlowLayout.TRAILING, 5, 0));
@@ -334,21 +384,39 @@ public final class MaterialPanel extends JPanel {
         commands.add(search);
         commands.add(upload);
         controls.add(commands, BorderLayout.LINE_END);
-        page.add(controls, BorderLayout.PAGE_START);
+
+        JPanel subjectControls = transparent(new FlowLayout(FlowLayout.LEADING, 5, 0));
+        JLabel subjectLabel = ViewStyle.muted("Subject");
+        subjectLabel.setLabelFor(librarySubject);
+        librarySubject.setName("materialSubjectFilter");
+        librarySubject.setPrototypeDisplayValue(new Scope(null, "Select a course subject"));
+        librarySubject.setRenderer(new InformativeRenderer() {
+            @Override
+            String display(Object value) {
+                return value == null ? "" : value.toString();
+            }
+        });
+        librarySubject.addActionListener(event -> refreshMatches(selectedId()));
+        subjectControls.add(subjectLabel);
+        subjectControls.add(librarySubject);
+        JPanel toolbar = transparent(new BorderLayout(0, 5));
+        toolbar.add(controls, BorderLayout.PAGE_START);
+        toolbar.add(subjectControls, BorderLayout.PAGE_END);
+        page.add(toolbar, BorderLayout.PAGE_START);
 
         library.setName("materialList");
         library.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-        library.getAccessibleContext().setAccessibleName("Uploaded PDFs");
+        library.getAccessibleContext().setAccessibleName("Uploaded study materials");
         library.setCellRenderer(new InformativeRenderer() {
             @Override
             String display(Object value) {
                 StudyMaterial material = (StudyMaterial) value;
-                return material == null ? "" : material.title();
+                return material == null ? "" : material.title() + " · " + format(material);
             }
         });
         library.addListSelectionListener(event -> updateSelection());
         materialInfo.setName("materialInfo");
-        materialInfo.getAccessibleContext().setAccessibleName("Selected PDF details");
+        materialInfo.getAccessibleContext().setAccessibleName("Selected study material details");
         JSplitPane layout = split(JSplitPane.HORIZONTAL_SPLIT, ViewStyle.scroll(library),
                 ViewStyle.scroll(materialInfo), 0.37);
         page.add(layout, BorderLayout.CENTER);
@@ -359,6 +427,7 @@ public final class MaterialPanel extends JPanel {
         JPanel actions = transparent(new FlowLayout(FlowLayout.TRAILING, 5, 0));
         studySelected.setName("materialStudySelected");
         studySelected.addActionListener(event -> {
+            if (!studySelected.isEnabled()) return;
             selectScope(selectedId());
             tabs.setSelectedIndex(ASSISTANT_TAB);
             topic.requestFocusInWindow();
@@ -488,7 +557,7 @@ public final class MaterialPanel extends JPanel {
         sourceOpen.setName("materialSourceOpen");
         sourceOpen.addActionListener(event -> {
             Passage selected = sources.getSelectedValue();
-            if (!busy && selected != null) {
+            if (canOpenPassage(selected)) {
                 actions.open(selected.materialId());
             }
         });
@@ -532,11 +601,26 @@ public final class MaterialPanel extends JPanel {
         }
         JFileChooser chooser = new JFileChooser();
         chooser.setName("materialPdfChooser");
-        chooser.setDialogTitle("Choose PDF");
-        chooser.setFileFilter(new FileNameExtensionFilter("PDF documents", "pdf"));
+        chooser.setDialogTitle("Choose study material");
+        chooser.setFileFilter(new FileFilter() {
+            @Override
+            public boolean accept(File file) {
+                return file.isDirectory() || StudyMaterial.supportsFileName(file.getName());
+            }
+
+            @Override
+            public String getDescription() {
+                return "Supported study files";
+            }
+        });
         chooser.setAcceptAllFileFilterUsed(false);
         if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
             Path source = chooser.getSelectedFile().toPath();
+            if (!StudyMaterial.supportsFileName(source.getFileName().toString())) {
+                JOptionPane.showMessageDialog(this, "Choose a supported study file.", "Upload study material",
+                        JOptionPane.INFORMATION_MESSAGE);
+                return;
+            }
             MaterialUploadForm.Details details = MaterialUploadForm.show(this, source, subjects);
             if (details != null) {
                 actions.upload(source, details.title(), details.description(), details.subjectId());
@@ -566,8 +650,9 @@ public final class MaterialPanel extends JPanel {
 
     private void deleteSelected() {
         StudyMaterial selected = library.getSelectedValue();
-        if (!busy && selected != null && JOptionPane.showConfirmDialog(this,
-                "Delete this PDF and its extracted passages?", "Delete study material",
+        if (!busy && selected != null && JOptionPane.showConfirmDialog(this, selected.isPdf()
+                ? "Delete this PDF and its extracted passages?" : "Delete this file from your study materials?",
+                "Delete study material",
                 JOptionPane.OK_CANCEL_OPTION, JOptionPane.WARNING_MESSAGE) == JOptionPane.OK_OPTION) {
             actions.delete(selected.id());
         }
@@ -607,7 +692,7 @@ public final class MaterialPanel extends JPanel {
         mode.setSelectedItem(Mode.valueOf(entry.mode()));
         selectScope(entry.materialId());
         if (entry.materialId() != null && ((Scope) scope.getSelectedItem()).id() == null) {
-            requestedSourceWarning = "The original PDF was removed. Check the source before running.";
+            requestedSourceWarning = "The original PDF is unavailable for text search. Check the source before running.";
         }
         if (entry.questions() != null) {
             questionCount.setValue(entry.questions().questions().size());
@@ -623,13 +708,19 @@ public final class MaterialPanel extends JPanel {
 
     private void updateSelection() {
         StudyMaterial selected = library.getSelectedValue();
+        boolean originalOnly = selected != null && !selected.isPdf();
+        open.setText(originalOnly ? "Show file" : "Open PDF");
+        open.setToolTipText(originalOnly ? "Show the stored file in File Explorer" : null);
         if (selected == null) {
             materialInfo.setText("");
         } else {
             String subject = selected.subjectId() == null ? "No subject"
                     : subjectNames.getOrDefault(selected.subjectId(), "No subject");
-            materialInfo.setText(selected.title() + "\n\nFile: " + selected.fileName() + "\nSubject: " + subject
+            String warning = selected.indexWarning();
+            materialInfo.setText(selected.title() + "\n\nFile: " + selected.fileName() + "\nType: " + format(selected)
+                    + "\nSubject: " + subject
                     + "\nUploaded: " + UPLOADED_DATE.format(selected.uploadedAt())
+                    + (warning == null || warning.isBlank() ? "" : "\n\n" + warning)
                     + (selected.description().isBlank() ? "" : "\n\n" + selected.description()));
             materialInfo.setCaretPosition(0);
         }
@@ -662,16 +753,19 @@ public final class MaterialPanel extends JPanel {
 
     private void updateControls() {
         boolean libraryReady = !busy && storageWarning == null;
-        boolean hasMaterial = libraryReady && selectedId() != null;
+        String selectedId = selectedId();
+        boolean hasMaterial = libraryReady && selectedId != null;
+        boolean canSearchPdf = !searchablePdfIds.isEmpty();
         upload.setEnabled(libraryReady);
         query.setEnabled(libraryReady);
         search.setEnabled(libraryReady);
+        librarySubject.setEnabled(libraryReady);
         open.setEnabled(hasMaterial);
         delete.setEnabled(hasMaterial);
-        studySelected.setEnabled(hasMaterial);
+        studySelected.setEnabled(hasMaterial && searchablePdfIds.contains(selectedId));
         topic.setEnabled(!busy);
         mode.setEnabled(!busy);
-        scope.setEnabled(!busy);
+        scope.setEnabled(!busy && canSearchPdf);
         Mode selected = (Mode) mode.getSelectedItem();
         boolean questionMode = selected != null && selected.isQuestionMode();
         questionOptions.setVisible(questionMode);
@@ -681,15 +775,23 @@ public final class MaterialPanel extends JPanel {
         showReferences.setVisible(questionMode || hasQuestions);
         remote.setVisible(remoteAvailable && !questionMode);
         remote.setEnabled(!busy && remoteAvailable && !questionMode);
-        String status = questionMode
+        String status = !canSearchPdf ? "Add a searchable PDF to run the Study Assistant." : questionMode
                 ? (remoteAvailable ? "Question generation uses the configured AI provider."
                 : "Configure an AI provider in Settings to generate questions.")
                 : (remote.isSelected() && remoteAvailable ? "Review the excerpts before sending an AI request."
                 : "Local study uses extracts from your PDFs.");
         assistantStatus.setText(requestedSourceWarning == null ? status : requestedSourceWarning);
         saveHistory.setEnabled(!busy);
-        generate.setEnabled(libraryReady && !materials.isEmpty() && (!questionMode || remoteAvailable));
-        sourceOpen.setEnabled(!busy && sources.getSelectedValue() != null);
+        generate.setEnabled(libraryReady && canSearchPdf && (!questionMode || remoteAvailable));
+        sourceOpen.setEnabled(canOpenPassage(sources.getSelectedValue()));
+    }
+
+    private boolean canOpenPassage(Passage selected) {
+        return !busy && selected != null && searchablePdfIds.contains(selected.materialId());
+    }
+
+    private static String format(StudyMaterial material) {
+        return material.extension().toUpperCase(Locale.ROOT);
     }
 
     private String selectedId() {

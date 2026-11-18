@@ -10,7 +10,7 @@ import java.util.Objects;
 /** Launch configuration and defaults for a local StudyFlow installation. */
 public record AppConfig(String name, String version, Path dataDirectory, Theme defaultTheme) {
     public static final String APPLICATION_NAME = "StudyFlow";
-    public static final String VERSION = "0.2.3";
+    public static final String VERSION = "0.2.4";
     public static final Priority DEFAULT_PRIORITY = UserSettings.DEFAULT_PRIORITY;
     public static final TaskStatus DEFAULT_STATUS = TaskStatus.TODO;
 

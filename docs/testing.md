@@ -1,5 +1,9 @@
 # StudyFlow verification
 
+## Release 0.2.4
+
+Maven verification passed **210 tests**. The material tests verify that original attachment bytes and subject assignments survive reopening, that non-PDF attachments stay out of page search, and that a PDF exceeding the page-indexing limit still opens as a local file. A Swing probe checked the subject filter and the actions for opening PDFs or revealing other attachments.
+
 ## Release 0.2.3
 
 Maven verification passed **209 tests**. New tests cover finite recurrence, time zones and date bounds, repeat imports, editing and deleting occurrences across profile reopen, and restoring a timetable backup. A compact Swing check verified timetable entries alongside tasks and Google events. [The screenshot](screenshots/timetable/calendar-timetable-light-1024x700.png) uses example data.

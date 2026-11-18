@@ -197,7 +197,7 @@ class PdfRetrievalTest {
     }
 
     @Test
-    void rejectsOversizedPageCollectionsBeforeExtractingAnyText() throws IOException {
+    void keepsOversizedPageCollectionsAsViewableFilesWithoutExtractingText() throws IOException {
         Path source = directory.resolve("too-many-pages.pdf");
         try (var document = new PDDocument()) {
             for (int index = 0; index <= 2_000; index++) {
@@ -208,11 +208,13 @@ class PdfRetrievalTest {
         try (StudyFlowContext context = StudyFlowContext.open(directory.resolve("profile"))) {
             List<ImportProgress> updates = new ArrayList<>();
             MaterialLibrary library = context.materialLibrary();
-            IOException oversized = assertThrows(IOException.class,
-                    () -> library.upload(source, "Too long", "", null, () -> false, updates::add));
-            assertTrue(oversized.getMessage().contains("2,000 pages"));
-            assertTrue(updates.stream().allMatch(progress -> progress.stage() == ImportStage.COPYING));
-            assertTrue(library.findAll().isEmpty());
+            StudyMaterial material = library.upload(source, "Too long", "", null, () -> false, updates::add);
+            assertFalse(material.hasPageSearch());
+            assertTrue(material.indexWarning().contains("2,000 pages"));
+            assertTrue(updates.stream().noneMatch(progress -> progress.stage() == ImportStage.EXTRACTING));
+            assertEquals(-1, Files.mismatch(source, library.openPath(material.id())));
+            assertEquals(List.of(material), library.findAll());
+            assertTrue(library.searchPassages("", material.id()).passages().isEmpty());
         }
     }
 

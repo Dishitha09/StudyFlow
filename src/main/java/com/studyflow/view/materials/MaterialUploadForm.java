@@ -19,7 +19,7 @@ import javax.swing.JScrollPane;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
 
-/** Collects metadata for a PDF already selected in the file chooser. */
+/** Collects metadata for a study material already selected in the file chooser. */
 final class MaterialUploadForm extends JPanel {
     private final JTextField title = new JTextField(28);
     private final JTextArea description = new JTextArea(4, 28);
@@ -29,7 +29,8 @@ final class MaterialUploadForm extends JPanel {
     MaterialUploadForm(Path source, List<Subject> subjects) {
         super(new GridBagLayout());
         String fileName = source.getFileName().toString();
-        initialTitle = fileName.replaceFirst("(?i)\\.pdf$", "");
+        int extension = fileName.lastIndexOf('.');
+        initialTitle = extension > 0 ? fileName.substring(0, extension) : fileName;
         title.setText(initialTitle);
         title.setName("materialUploadTitle");
         description.setName("materialUploadDescription");
@@ -47,9 +48,9 @@ final class MaterialUploadForm extends JPanel {
         JLabel file = new JLabel();
         file.putClientProperty("html.disable", Boolean.TRUE);
         file.setText(fileName);
-        file.setToolTipText("PDF file: " + fileName);
+        file.setToolTipText("File: " + fileName);
         file.setPreferredSize(new Dimension(title.getPreferredSize().width, file.getPreferredSize().height));
-        addField("PDF file", file, file, 0);
+        addField("File", file, file, 0);
         addField("Title", title, title, 1);
         addField("Subject", subject, subject, 2);
         addField("Description", new JScrollPane(description), description, 3);
@@ -57,7 +58,7 @@ final class MaterialUploadForm extends JPanel {
 
     static Details show(Component owner, Path source, List<Subject> subjects) {
         MaterialUploadForm form = new MaterialUploadForm(source, subjects);
-        return FormDialogs.show(owner, "Upload study material", form, form.title, "Upload PDF",
+        return FormDialogs.show(owner, "Upload study material", form, form.title, "Upload file",
                 form::hasUnsavedChanges, form::collect);
     }
 
@@ -68,7 +69,7 @@ final class MaterialUploadForm extends JPanel {
     private Details collect() {
         if (title.getText().isBlank()) {
             title.requestFocusInWindow();
-            throw new IllegalArgumentException("Enter a title for the PDF.");
+            throw new IllegalArgumentException("Enter a title for the file.");
         }
         return new Details(title.getText().strip(), description.getText().strip(), subjectId());
     }

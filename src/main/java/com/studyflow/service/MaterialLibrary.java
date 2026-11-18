@@ -14,16 +14,16 @@ import java.nio.file.attribute.BasicFileAttributes;
 import java.time.Clock;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 
-/** Imports managed PDFs and searches their cached, page-numbered passages. */
+/** Stores managed study files and searches eligible PDFs by cached, page-numbered passages. */
 public final class MaterialLibrary {
     private static final int COPY_BUFFER_SIZE = 64 * 1024;
+    private static final int MAX_FILE_BYTES = 160 * 1024 * 1024;
 
     private final Path files;
     private final Path index;
@@ -51,12 +51,17 @@ public final class MaterialLibrary {
         Objects.requireNonNull(cancelled, "Cancellation check");
         Objects.requireNonNull(progress, "Import progress listener");
         checkCancelled(cancelled);
-        if (source == null || !Files.isRegularFile(source)
-                || !source.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".pdf")) {
-            throw new IllegalArgumentException("Choose a PDF file.");
+        if (source == null || !Files.isRegularFile(source, LinkOption.NOFOLLOW_LINKS)
+                || !StudyMaterial.supportsFileName(source.getFileName().toString())) {
+            throw new IllegalArgumentException("Choose a supported study file.");
         }
         long bytes = Files.size(source);
-        PdfPassageIndex.checkPdfSize(bytes);
+        checkSize(bytes);
+        // Check the format before copying a PDF too large for the text indexing path.
+        if (bytes > PdfPassageIndex.MAX_PDF_BYTES
+                && source.getFileName().toString().toLowerCase(java.util.Locale.ROOT).endsWith(".pdf")) {
+            requirePdfHeader(source);
+        }
         StudyMaterial material = new StudyMaterial(IdGenerator.next(), title, source.getFileName().toString(),
                 description, subjectId, clock.instant());
         requireExistingSubject(material);
@@ -64,23 +69,30 @@ public final class MaterialLibrary {
         Files.createDirectories(files);
         Files.createDirectories(index);
         requireSafeDirectories();
-        Path pdf = pdfPath(material.id());
+        Path file = filePath(material);
         Path cache = cachePath(material.id());
-        if (Files.exists(pdf, LinkOption.NOFOLLOW_LINKS) || Files.exists(cache, LinkOption.NOFOLLOW_LINKS)) {
+        if (Files.exists(file, LinkOption.NOFOLLOW_LINKS) || Files.exists(cache, LinkOption.NOFOLLOW_LINKS)) {
             throw new IOException("Could not reserve a new material file. Try importing again.");
         }
         Path pending = Files.createTempFile(files, material.id() + ".", ".importing");
         boolean cached = false;
         boolean moved = false;
         try {
-            copyPdf(source, pending, (int) bytes, cancelled, progress);
-            PdfPassageIndex.rebuild(pending, cache, PdfPassageIndex.stamp(pending), cancelled,
-                    (completed, total) -> progress.accept(new ImportProgress(ImportStage.EXTRACTING, completed, total)));
-            cached = true;
+            copyFile(source, pending, (int) bytes, cancelled, progress);
+            if (material.isPdf()) {
+                try {
+                    PdfPassageIndex.rebuild(pending, cache, PdfPassageIndex.stamp(pending), cancelled,
+                            (completed, total) -> progress.accept(new ImportProgress(ImportStage.EXTRACTING, completed, total)));
+                    cached = true;
+                } catch (PdfPassageIndex.IndexLimitException limit) {
+                    requirePdfHeader(pending);
+                    material = material.withIndexWarning("Saved without PDF page search. " + limit.getMessage());
+                }
+            }
             progress.accept(new ImportProgress(ImportStage.SAVING, 0, 0));
             checkCancelled(cancelled);
             requireExistingSubject(material);
-            Files.move(pending, pdf, StandardCopyOption.ATOMIC_MOVE);
+            Files.move(pending, file, StandardCopyOption.ATOMIC_MOVE);
             moved = true;
             materials.insert(material);
             return material;
@@ -88,7 +100,7 @@ public final class MaterialLibrary {
             if (cached) {
                 clean(cache, failure);
             }
-            clean(moved ? pdf : pending, failure);
+            clean(moved ? file : pending, failure);
             throw failure;
         }
     }
@@ -99,7 +111,22 @@ public final class MaterialLibrary {
         }
     }
 
-    private static void copyPdf(Path source, Path pending, int expected, BooleanSupplier cancelled,
+    private static void checkSize(long bytes) throws IOException {
+        if (bytes <= 0 || bytes > MAX_FILE_BYTES) {
+            throw new IOException("Choose a nonempty file up to 160 MB.");
+        }
+    }
+
+    private static void requirePdfHeader(Path source) throws IOException {
+        try (var stream = Files.newInputStream(source)) {
+            String prefix = new String(stream.readNBytes(1024), java.nio.charset.StandardCharsets.ISO_8859_1);
+            if (!prefix.contains("%PDF-")) {
+                throw new IOException("This file has no PDF header. Files over 100 MB cannot be indexed.");
+            }
+        }
+    }
+
+    private static void copyFile(Path source, Path pending, int expected, BooleanSupplier cancelled,
                                 Consumer<ImportProgress> progress) throws IOException {
         progress.accept(new ImportProgress(ImportStage.COPYING, 0, expected));
         checkCancelled(cancelled);
@@ -111,7 +138,7 @@ public final class MaterialLibrary {
             while ((count = input.read(buffer)) >= 0) {
                 checkCancelled(cancelled);
                 copied += count;
-                PdfPassageIndex.checkPdfSize(copied);
+                checkSize(copied);
                 if (copied > expected) {
                     throw new IOException("The selected file changed while it was being copied. Try again.");
                 }
@@ -154,10 +181,16 @@ public final class MaterialLibrary {
     }
 
     public synchronized RetrievalResult searchPassages(String query, String materialId) {
-        List<StudyMaterial> candidates = materialId == null ? findAll() : List.of(require(materialId));
+        List<StudyMaterial> candidates = materialId == null
+                ? findAll().stream().filter(StudyMaterial::hasPageSearch).toList() : List.of(require(materialId));
         PassageRanker best = new PassageRanker(query);
         List<RetrievalWarning> warnings = new ArrayList<>();
         for (StudyMaterial item : candidates) {
+            if (!item.hasPageSearch()) {
+                warnings.add(warning(item, item.indexWarning() == null
+                        ? "This attachment does not have PDF page text." : item.indexWarning()));
+                continue;
+            }
             try {
                 LoadedIndex result = loadIndex(item, query);
                 best.merge(result.matches());
@@ -181,7 +214,7 @@ public final class MaterialLibrary {
 
     private LoadedIndex loadIndex(StudyMaterial item, String query) throws IOException {
         requireSafeDirectories();
-        Path pdf = pdfPath(item.id());
+        Path pdf = filePath(item);
         Path cache = cachePath(item.id());
         PdfPassageIndex.SourceStamp stamp = PdfPassageIndex.stamp(pdf);
         try {
@@ -209,9 +242,9 @@ public final class MaterialLibrary {
 
     public synchronized Path openPath(String id) throws IOException {
         requireSafeDirectories();
-        Path path = pdfPath(require(id).id());
+        Path path = filePath(require(id));
         if (!Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)) {
-            throw new IOException("The stored PDF is missing or is not a regular managed file.");
+            throw new IOException("The stored file is missing or is not a regular managed file.");
         }
         return path;
     }
@@ -219,19 +252,19 @@ public final class MaterialLibrary {
     public synchronized void delete(String id) throws IOException {
         requireSafeDirectories();
         StudyMaterial material = require(id);
-        Path pdf = pdfPath(material.id());
+        Path file = filePath(material);
         Path cache = cachePath(material.id());
         Path stagedPdf = null;
         Path stagedCache = null;
         try {
-            stagedPdf = stageRemoval(pdf);
+            stagedPdf = stageRemoval(file);
             stagedCache = stageRemoval(cache);
             if (!materials.delete(material.id())) {
                 throw new IOException("The study material changed. Reload the library and try again.");
             }
         } catch (IOException | RuntimeException failure) {
             boolean cacheRestored = restoreStaged(stagedCache, cache, failure);
-            boolean pdfRestored = restoreStaged(stagedPdf, pdf, failure);
+            boolean pdfRestored = restoreStaged(stagedPdf, file, failure);
             if (!cacheRestored || !pdfRestored) {
                 throw new IOException("Removal failed and a staged file could not be restored. "
                         + "The staged copy was kept in the StudyFlow materials folder.", failure);
@@ -240,7 +273,7 @@ public final class MaterialLibrary {
         }
 
         IOException cleanup = new IOException("The study material was removed, but temporary files could not be "
-                + "deleted. Close the PDF viewer and check the StudyFlow materials folder.");
+                + "deleted. Close the file viewer and check the StudyFlow materials folder.");
         clean(stagedCache, cleanup);
         clean(stagedPdf, cleanup);
         if (cleanup.getSuppressed().length != 0) {
@@ -258,12 +291,15 @@ public final class MaterialLibrary {
             if (Files.exists(folder, LinkOption.NOFOLLOW_LINKS)
                     && (folder.getParent() == null || !Files.isDirectory(folder, LinkOption.NOFOLLOW_LINKS)
                     || !folder.toRealPath().equals(folder.getParent().toRealPath().resolve(folder.getFileName())))) {
-                throw new IOException("StudyFlow won't read or change PDF files through a redirected library folder.");
+                throw new IOException("StudyFlow won't read or change files through a redirected library folder.");
             }
         }
     }
 
-    private Path pdfPath(String id) { return files.resolve(id + ".pdf"); }
+    private Path filePath(StudyMaterial material) {
+        return material.isPdf() ? files.resolve(material.id() + ".pdf")
+                : files.resolve(material.id() + "--" + material.fileName());
+    }
     private Path cachePath(String id) { return index.resolve(id + ".txt"); }
 
     private static Path stageRemoval(Path source) throws IOException {
@@ -324,7 +360,7 @@ public final class MaterialLibrary {
     public record ImportProgress(ImportStage stage, int completed, int total) { }
 
     public static final class ImportCancelledException extends IOException {
-        private ImportCancelledException() { super("PDF import cancelled."); }
+        private ImportCancelledException() { super("Material import cancelled."); }
     }
 
     public record RetrievalWarning(String materialId, String fileName, String message) { }

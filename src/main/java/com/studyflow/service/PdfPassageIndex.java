@@ -203,7 +203,7 @@ final class PdfPassageIndex {
 
     record SourceStamp(String value) { }
 
-    private static final class IndexLimitException extends IOException {
+    static final class IndexLimitException extends IOException {
         private IndexLimitException(String message) { super(message); }
     }
 

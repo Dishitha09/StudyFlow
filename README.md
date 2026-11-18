@@ -1,6 +1,6 @@
 # StudyFlow
 
-StudyFlow 0.2.3 is an offline-first Java desktop workspace for coursework, focus, attendance, and study PDFs.
+StudyFlow 0.2.4 is an offline-first Java desktop workspace for coursework, focus, attendance, and study materials.
 
 ![The StudyFlow dashboard running with sample academic data](docs/screenshots/completion/dashboard-light-1366x768.png)
 
@@ -66,7 +66,7 @@ StudyFlow opens to the Dashboard. It shows live task totals, today's deadlines, 
 - **Calendar** filters task deadlines by subject and lets you edit a deadline or its subject. Choose **Import timetable** to load an `.ics` file offline. Finite daily or weekly classes expand into individual entries that you can edit or remove. Reimporting the same timetable preserves those changes. **Kanban** shows progress by status and highlights overdue deadlines. Use a task’s context menu to manage recurrence and subtasks.
 - **Focus** offers presets and custom timer lengths. Use **Ctrl+Space** to start or pause from the Focus panel. Completed focus time can be linked to a task or subject.
 - **Attendance** records class outcomes and corrections, and calculates classes you need to attend or can miss. **Analytics** graphs saved activity by date, subject, and attendance target. Older completions with unknown dates remain visible in inventory without appearing in dated trends.
-- **Study Materials** imports PDFs with progress and cancellation and searches ranked text matches with page references. The **Study Assistant** labels local extracts and can optionally produce remote short-answer, long-answer or multiple-choice question sets after you review the exact request. **History** can reuse or delete individual entries; uncheck **Save in local history** to omit a run.
+- **Study Materials** keeps local copies of PDFs, supported Office documents, slides and spreadsheets, text and code files, and images. Find attachments by filename or metadata, filter by subject, and use **Show file** to locate files other than PDFs. PDFs within the indexing limits also support ranked text matches and page references. The **Study Assistant** uses those PDF passages for local extracts or optional remote questions after you review the request. **History** can reuse or delete individual entries.
 
 ## Optional integrations
 
@@ -76,11 +76,11 @@ StudyFlow opens to the Dashboard. It shows live task totals, today's deadlines, 
 - **Spotify** stores a saved `https://open.spotify.com` link and opens it using your system browser. Playback belongs to Spotify.
 - **OpenAI** uses `OPENAI_API_KEY` and optionally `STUDYFLOW_OPENAI_MODEL`. Settings can test model access without sending document content. A remote study request sends selected passages only after confirmation. Local study modes work without credentials. [OpenAI Responses API](https://developers.openai.com/api/reference/resources/responses/methods/create)
 
-Scanned PDFs without a text layer need OCR before text retrieval. Optional live services require your own accounts and were tested through offline or simulated checks in this build.
+Scanned PDFs without a text layer need OCR before text retrieval. PDFs beyond the indexing limits remain viewable. Other attachments support filename and metadata search. Optional live services require your own accounts and were tested through offline or simulated checks in this build.
 
 ## Local data and recovery
 
-By default, StudyFlow uses the `data` directory in the working directory. It writes separate JSON files for tasks, academic records, settings, focus history, attendance, timetable entries and integration links. Imported timetable entries stay in `timetable/timetable.json` in that profile. Google Calendar sync applies only to eligible StudyFlow tasks. Managed PDFs and extracted text are stored separately. To launch against an alternate location with Maven, pass `--data-dir` to the application via Maven Exec.
+By default, StudyFlow uses the `data` directory in the working directory. It writes separate JSON files for tasks, academic records, settings, focus history, attendance, timetable entries and integration links. Imported timetable entries stay in `timetable/timetable.json` in that profile. Google Calendar sync applies only to eligible StudyFlow tasks. Managed material files and the PDF text index are stored separately. To launch against an alternate location with Maven, pass `--data-dir` to the application via Maven Exec.
 
 ```powershell
 mvn exec:java "-Dexec.args=--data-dir 'C:/StudyFlow data'"
@@ -88,7 +88,7 @@ mvn exec:java "-Dexec.args=--data-dir 'C:/StudyFlow data'"
 
 When an academic or settings file changes, StudyFlow keeps a timestamped copy of the preceding valid file under `data/backups`. Study Assistant history is an exception, so clearing it does not leave automatic history copies. Saving requires a filesystem that supports atomic file replacement.
 
-To back up the latest saved file, close StudyFlow and select its type: `tasks`, `subjects`, `workspaces`, `notes`, `settings`, `attendance`, `attendance-targets`, `focus`, `timetable`, or `integrations`. Use the same type when restoring. Close StudyFlow and copy the entire profile for a backup that includes your managed PDFs.
+To back up the latest saved file, close StudyFlow and select its type: `tasks`, `subjects`, `workspaces`, `notes`, `settings`, `attendance`, `attendance-targets`, `focus`, `timetable`, or `integrations`. Use the same type when restoring. Close StudyFlow and copy the entire profile for a backup that includes your managed material files.
 
 ```powershell
 mvn exec:java '-Dexec.args=--backup tasks'

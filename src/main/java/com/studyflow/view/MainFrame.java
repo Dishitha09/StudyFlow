@@ -181,11 +181,11 @@ public final class MainFrame extends JFrame {
                                 var current = latest.getAndSet(null);
                                 if (!closing && current != null) materials.showImportProgress(current);
                             });
-                        }), "PDF added.", MainFrame.this::finishPdfImport, message -> {
+                        }), "Material added.", MainFrame.this::finishPdfImport, message -> {
                             finishPdfImport();
-                            if ("PDF import cancelled.".equals(message)) {
+                            if ("Material import cancelled.".equals(message)) {
                                 setBusy(false);
-                                showFeedback("PDF import cancelled. Nothing was added.", false);
+                                showFeedback("Material import cancelled. Nothing was added.", false);
                             } else showFailure(message);
                         });
             }
@@ -203,13 +203,16 @@ public final class MainFrame extends JFrame {
 
             @Override
             public void open(String id) {
-                controller.openMaterial(id, path -> { if (!closing) showFeedback("PDF opened.", false); },
+                controller.openMaterial(id, path -> {
+                    if (!closing) showFeedback(path.getFileName().toString().toLowerCase(java.util.Locale.ROOT)
+                            .endsWith(".pdf") ? "PDF opened." : "Material shown in its folder.", false);
+                },
                         MainFrame.this::showFailure);
             }
 
             @Override
             public void delete(String id) {
-                change(() -> controller.deleteMaterial(id), "PDF removed.", null);
+                change(() -> controller.deleteMaterial(id), "Material removed.", null);
             }
 
             @Override

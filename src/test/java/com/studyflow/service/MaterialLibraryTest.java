@@ -26,6 +26,32 @@ class MaterialLibraryTest {
     Path directory;
 
     @Test
+    void keepsOriginalAttachmentBytesAndSubjectOnReopenWithoutIndexingIt() throws IOException {
+        Path profile = directory.resolve("profile");
+        Path source = Files.writeString(directory.resolve("ReviewExample.java"), "// Course example");
+        Path unsupported = Files.writeString(directory.resolve("run.cmd"), "not a study attachment");
+        StudyMaterial saved;
+        try (StudyFlowContext context = StudyFlowContext.open(profile)) {
+            String subject = context.subjectManager().create("Programming", "COMP205", "", List.of()).getId();
+            var library = context.materialLibrary();
+            saved = library.upload(source, "Code example", "Week 4", subject);
+            assertFalse(saved.hasPageSearch());
+            assertThrows(IllegalArgumentException.class,
+                    () -> library.upload(unsupported, "Unsupported", "", subject));
+        }
+        try (StudyFlowContext context = StudyFlowContext.open(profile)) {
+            var library = context.materialLibrary();
+            assertEquals(List.of(saved), library.search("ReviewExample"));
+            assertEquals(-1, Files.mismatch(source, library.openPath(saved.id())));
+            assertTrue(library.searchPassages("Course", null).warnings().isEmpty());
+            assertTrue(library.searchPassages("Course", saved.id()).passages().isEmpty());
+            assertFalse(Files.exists(profile.resolve("materials/index").resolve(saved.id() + ".txt")));
+            library.delete(saved.id());
+            assertTrue(library.findAll().isEmpty());
+        }
+    }
+
+    @Test
     void uploadsSearchablePagesAndRetainsTheirSourceReferencesAfterReopen() throws IOException {
         Path profile = directory.resolve("profile");
         Path original = writePdf("memory.pdf", "Virtual memory maps address spaces.",

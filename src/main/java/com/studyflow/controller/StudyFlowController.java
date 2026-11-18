@@ -181,11 +181,19 @@ public final class StudyFlowController {
         submit(() -> {
             try {
                 Path path = context.materialLibrary().openPath(id);
-                if (!java.awt.Desktop.isDesktopSupported()
-                        || !java.awt.Desktop.getDesktop().isSupported(java.awt.Desktop.Action.OPEN)) {
-                    throw new IOException("Open this PDF in a local viewer: " + path);
+                if (!java.awt.Desktop.isDesktopSupported()) {
+                    throw new IOException("Open the saved material from this path: " + path);
                 }
-                java.awt.Desktop.getDesktop().open(path.toFile());
+                var desktop = java.awt.Desktop.getDesktop();
+                boolean pdf = path.getFileName().toString().toLowerCase(java.util.Locale.ROOT).endsWith(".pdf");
+                if (!pdf && desktop.isSupported(java.awt.Desktop.Action.BROWSE_FILE_DIR)) {
+                    desktop.browseFileDirectory(path.toFile());
+                } else if (desktop.isSupported(java.awt.Desktop.Action.OPEN)) {
+                    // Attachments are revealed, never launched based on their file association.
+                    desktop.open((pdf ? path : path.getParent()).toFile());
+                } else {
+                    throw new IOException("Open the saved material from this path: " + path);
+                }
                 return path;
             } catch (IOException error) {
                 throw new UncheckedIOException(error.getMessage(), error);
